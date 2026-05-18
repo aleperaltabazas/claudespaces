@@ -304,6 +304,17 @@ def test_remove_when_container_already_gone(mock_docker, mock_sessions, mock_con
     mock_sessions.remove_session.assert_called_once_with("abc12345")
 
 
+def test_remove_running_session(mock_docker, mock_sessions, mock_container):
+    mock_sessions.get_session_by_id.return_value = {
+        "id": "abc12345", "name": "bold-space", "container_id": "c1", "status": "running"
+    }
+    result = runner.invoke(app, ["remove", "abc12345"])
+    assert result.exit_code == 0
+    mock_container.remove_container.assert_called_once()
+    mock_sessions.remove_session.assert_called_once_with("abc12345")
+    assert "Removed session bold-space" in result.output
+
+
 def test_no_dirs_no_config_exits_1(mock_config):
     # CLI exits before Docker check; CWD has no claudespaces.yml so Path check is False naturally
     mock_config.load_config.return_value = {}

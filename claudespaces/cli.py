@@ -221,7 +221,11 @@ def stop(session_id: str) -> None:
         typer.echo("Docker is not running or not reachable.")
         raise typer.Exit(1)
 
-    container.stop_container(docker_client, session["container_id"])
+    try:
+        container.stop_container(docker_client, session["container_id"])
+    except Exception as e:
+        typer.echo(f"Failed to stop container: {e}")
+        raise typer.Exit(1)
     sessions.update_session(session_id, status="stopped")
     typer.echo(f"Stopped session {session['name']} ({session_id}).")
 
@@ -239,6 +243,10 @@ def remove(session_id: str) -> None:
         typer.echo("Docker is not running or not reachable.")
         raise typer.Exit(1)
 
-    container.remove_container(docker_client, session["container_id"])
+    try:
+        container.remove_container(docker_client, session["container_id"])
+    except Exception as e:
+        typer.echo(f"Failed to remove container: {e}")
+        raise typer.Exit(1)
     sessions.remove_session(session_id)
     typer.echo(f"Removed session {session['name']} ({session_id}).")
