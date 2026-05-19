@@ -31,14 +31,21 @@ def resolve_image(image: str | None, dockerfile: str | None, docker_client) -> s
     except docker.errors.ImageNotFound:
         pass
 
+    # Claude Code is a Node.js package; install Node via NodeSource LTS, then npm install.
+    # DEBIAN_FRONTEND=noninteractive prevents apt from blocking on timezone prompts.
     dockerfile_content = (
         f"FROM {base_tag}\n"
-        "RUN apt-get update && apt-get install -y curl && \\\n"
-        "    curl -fsSL https://claude.ai/install.sh | sh\n"
+        "ENV DEBIAN_FRONTEND=noninteractive\n"
+        "RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg && \\\n"
+        "    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \\\n"
+        "    apt-get install -y nodejs && \\\n"
+        "    npm install -g @anthropic-ai/claude-code\n"
     )
     with tempfile.TemporaryDirectory() as tmpdir:
         with open(os.path.join(tmpdir, "Dockerfile"), "w") as f:
             f.write(dockerfile_content)
-        docker_client.images.build(path=tmpdir, tag=intermediate_tag)
+        _, logs = docker_client.images.build(path=tmpdir, tag=intermediate_tag)
+        for entry in logs:
+            pass  # consume generator so BuildError carries full log on failure
 
     return intermediate_tag

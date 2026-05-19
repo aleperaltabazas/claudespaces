@@ -104,6 +104,9 @@ def main(
         raise typer.Exit(1)
     except docker.errors.BuildError as e:
         typer.echo(f"Docker build failed: {e}")
+        for entry in e.build_log:
+            if isinstance(entry, dict) and "stream" in entry:
+                typer.echo(entry["stream"], nl=False)
         raise typer.Exit(1)
 
     running_ids = container.get_running_container_ids(docker_client)

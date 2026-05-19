@@ -22,7 +22,7 @@ NOUNS = [
     "marsh", "mist", "moon", "moss", "nova", "ocean", "peak",
     "plain", "prism", "pulse", "ridge", "rift", "river", "rock",
     "shade", "shore", "sky", "slope", "snow", "solar", "spark",
-    "star", "stone", "storm",
+    "star", "stone",
 ]
 
 
