@@ -16,5 +16,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-mock>=3.0"]
 
+[tool.setuptools.packages.find]
+include = ["claudespaces*"]
+
+[tool.setuptools.package-data]
+claudespaces = ["Dockerfile.base"]
+
 [project.scripts]
 claudespaces = "claudespaces.cli:app"
