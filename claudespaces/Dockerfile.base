@@ -1,21 +1,15 @@
 ARG BASE_IMAGE=ubuntu:24.04
 FROM ${BASE_IMAGE}
 
-RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99-sandbox
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt update && apt install -y \
   curl \
-  git \
-  less \
-  procps \
-  sudo \
-  && apt-get clean && rm -rf /var/lib/apt/lists/*
+  && apt clean && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
 RUN mkdir -p /workspace /claudespaces
 WORKDIR /workspace
 
-RUN printf '#!/bin/bash\nset -e\nif [ -d /claudespaces/.claude ]; then cp -r /claudespaces/.claude ~/.claude; fi\nif [ -f /claudespaces/.claude.json ]; then cp /claudespaces/.claude.json ~/.claude.json; fi\nexec /root/.local/bin/claude "$@"\n' > /claudespaces/entrypoint.sh && chmod +x /claudespaces/entrypoint.sh
+COPY support/bin/entrypoint.sh /claudespaces/entrypoint.sh
 
 ENTRYPOINT ["/claudespaces/entrypoint.sh"]
