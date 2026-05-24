@@ -1,0 +1,3 @@
+# Session memory
+
+Given that projects get loaded to /workspace in the container and that ~/.claude/sessions is mounted, all sessions will be saved and be globally visible. It'd be preferrable that each workspace created gets their own, separate session so the user can create as many coding sessions as desired. We'll probably need to unmount the claude session dir and keep track of sessions specifically for claudespaces.

@@ -1,0 +1,2 @@
+# Mount ~/.claude.json
+
