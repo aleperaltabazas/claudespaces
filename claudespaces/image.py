@@ -1,29 +1,23 @@
 import hashlib
 import os
 import re
-import tempfile
+import sys
+from pathlib import Path
 
 import docker
 
 
-def resolve_image(image: str | None, dockerfile: str | None, docker_client) -> str:
-    if dockerfile is not None:
-        if not os.path.exists(dockerfile):
-            raise FileNotFoundError(f"Dockerfile not found: {dockerfile}")
-        abs_path = os.path.abspath(dockerfile)
-        path_slug = hashlib.md5(abs_path.encode()).hexdigest()[:12]
-        base_tag = f"claudespaces-custom:{path_slug}"
-        docker_client.images.build(
-            path=os.path.dirname(abs_path),
-            dockerfile=os.path.basename(abs_path),
-            tag=base_tag,
-        )
-    elif image is not None:
-        base_tag = image
-    else:
-        base_tag = "ubuntu:24.04"
+def resolve_image(
+    image: str | None,
+    global_dockerfile: str | None,
+    dockerfile: str | None,
+    docker_client,
+) -> str:
+    base_tag = _build_pre_claude_base(image, global_dockerfile, dockerfile, docker_client)
 
-    intermediate_tag = "claudespaces-base:" + re.sub(r"[:/]", "-", base_tag)
+    base_dockerfile = Path(__file__).parent / "Dockerfile.base"
+    dockerfile_hash = hashlib.md5(base_dockerfile.read_bytes()).hexdigest()[:12]
+    intermediate_tag = "claudespaces-base:" + re.sub(r"[:/]", "-", base_tag) + "-" + dockerfile_hash
 
     try:
         docker_client.images.get(intermediate_tag)
@@ -31,21 +25,70 @@ def resolve_image(image: str | None, dockerfile: str | None, docker_client) -> s
     except docker.errors.ImageNotFound:
         pass
 
-    # Claude Code is a Node.js package; install Node via NodeSource LTS, then npm install.
-    # DEBIAN_FRONTEND=noninteractive prevents apt from blocking on timezone prompts.
-    dockerfile_content = (
-        f"FROM {base_tag}\n"
-        "ENV DEBIAN_FRONTEND=noninteractive\n"
-        "RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg && \\\n"
-        "    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \\\n"
-        "    apt-get install -y nodejs && \\\n"
-        "    npm install -g @anthropic-ai/claude-code\n"
+    print(f"Building {intermediate_tag} ...")
+    _build(
+        docker_client,
+        path=str(base_dockerfile.parent),
+        dockerfile=base_dockerfile.name,
+        tag=intermediate_tag,
+        buildargs={"BASE_IMAGE": base_tag},
     )
-    with tempfile.TemporaryDirectory() as tmpdir:
-        with open(os.path.join(tmpdir, "Dockerfile"), "w") as f:
-            f.write(dockerfile_content)
-        _, logs = docker_client.images.build(path=tmpdir, tag=intermediate_tag)
-        for entry in logs:
-            pass  # consume generator so BuildError carries full log on failure
 
     return intermediate_tag
+
+
+def _build_pre_claude_base(
+    image: str | None,
+    global_dockerfile: str | None,
+    dockerfile: str | None,
+    docker_client,
+) -> str:
+    if global_dockerfile is not None and not os.path.exists(global_dockerfile):
+        raise FileNotFoundError(f"Global Dockerfile not found: {global_dockerfile}")
+    if dockerfile is not None and not os.path.exists(dockerfile):
+        raise FileNotFoundError(f"Dockerfile not found: {dockerfile}")
+
+    current = image or "ubuntu:24.04"
+
+    if global_dockerfile is not None:
+        abs_path = os.path.abspath(global_dockerfile)
+        slug = hashlib.md5(f"{abs_path}:{current}".encode()).hexdigest()[:12]
+        tag = f"claudespaces-global:{slug}"
+        try:
+            docker_client.images.get(tag)
+        except docker.errors.ImageNotFound:
+            print(f"Building {tag} ...")
+            _build(
+                docker_client,
+                path=os.path.dirname(abs_path),
+                dockerfile=os.path.basename(abs_path),
+                tag=tag,
+                buildargs={"BASE_IMAGE": current},
+            )
+        current = tag
+
+    if dockerfile is not None:
+        abs_path = os.path.abspath(dockerfile)
+        slug = hashlib.md5(f"{abs_path}:{current}".encode()).hexdigest()[:12]
+        tag = f"claudespaces-custom:{slug}"
+        print(f"Building {tag} ...")
+        _build(
+            docker_client,
+            path=os.path.dirname(abs_path),
+            dockerfile=os.path.basename(abs_path),
+            tag=tag,
+            buildargs={"BASE_IMAGE": current},
+        )
+        current = tag
+
+    return current
+
+
+def _build(docker_client, **kwargs) -> None:
+    stream = docker_client.api.build(decode=True, rm=True, **kwargs)
+    for chunk in stream:
+        if "stream" in chunk:
+            sys.stdout.write(chunk["stream"])
+            sys.stdout.flush()
+        elif "error" in chunk:
+            raise docker.errors.BuildError(chunk["error"], iter([chunk]))
