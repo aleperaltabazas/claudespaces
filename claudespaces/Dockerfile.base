@@ -1,6 +1,8 @@
 ARG BASE_IMAGE=ubuntu:24.04
 FROM ${BASE_IMAGE}
 
+RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99-sandbox
+
 RUN apt update && apt install -y \
   curl \
   && apt clean && rm -rf /var/lib/apt/lists/*
@@ -10,6 +12,6 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN mkdir -p /workspace /claudespaces
 WORKDIR /workspace
 
-COPY support/bin/entrypoint.sh /claudespaces/entrypoint.sh
+COPY claudespaces/support/bin/entrypoint.sh /claudespaces/entrypoint.sh
 
 ENTRYPOINT ["/claudespaces/entrypoint.sh"]
