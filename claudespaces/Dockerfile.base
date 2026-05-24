@@ -12,6 +12,8 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN mkdir -p /workspace /claudespaces
 WORKDIR /workspace
 
-COPY claudespaces/support/bin/entrypoint.sh /claudespaces/entrypoint.sh
+COPY support/bin/entrypoint.sh /claudespaces/entrypoint.sh
 
-ENTRYPOINT ["/claudespaces/entrypoint.sh"]
+RUN chmod +x /claudespaces/entrypoint.sh
+
+ENTRYPOINT ["sleep", "infinity"]

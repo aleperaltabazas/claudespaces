@@ -64,7 +64,7 @@ def attach_container(container_id: str) -> None:
     # Then exec with -it so Docker puts the host terminal into raw mode —
     # docker start -ai skips that step, breaking Enter in TUI applications.
     subprocess.run(["docker", "start", container_id], check=True, capture_output=True)
-    subprocess.run(["docker", "exec", "-it", container_id, "/root/.local/bin/claude"])
+    subprocess.run(["docker", "exec", "-it", container_id, "/claudespaces/entrypoint.sh"])
 
 
 def stop_container(docker_client, container_id: str) -> None:
