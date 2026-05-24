@@ -9,4 +9,4 @@ if [ -f /claudespaces/.claude.json ]; then
     cp /claudespaces/.claude.json ~/.claude.json
 fi
 
-exec /root/.local/bin/claude "$@" --add-dir "/"
+exec sleep infinity

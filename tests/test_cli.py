@@ -102,6 +102,21 @@ def test_first_run_saves_session(
     assert saved["name"] == "bold-space"
 
 
+def test_session_marked_stopped_and_container_stopped_after_attach(
+    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config
+):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    mock_sessions.get_sessions_for_dirs.return_value = []
+
+    runner.invoke(app, [str(proj)])
+
+    update_calls = mock_sessions.update_session.call_args_list
+    assert any(
+        call.kwargs.get("status") == "stopped" for call in update_calls
+    )
+    mock_container.stop_container.assert_called_once()
+
 
 def test_existing_sessions_shows_selector(
     tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config, mock_questionary

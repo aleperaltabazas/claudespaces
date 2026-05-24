@@ -158,12 +158,19 @@ def main(
             "status": "running",
         }
         sessions.save_session(session)
-        container.attach_container(container_id)
+        session_id = session["id"]
     else:
         session_id = selected["id"]
         container_id = selected["container_id"]
         sessions.update_session(session_id, status="running")
+
+    try:
         container.attach_container(container_id)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sessions.update_session(session_id, status="stopped", last_used_at=_now_utc())
+        container.stop_container(docker_client, container_id)
 
 
 @app.command()

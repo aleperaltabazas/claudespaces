@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 
 import docker
@@ -59,7 +60,11 @@ def create_container(docker_client, image: str, dirs: list[str]) -> str:
 
 
 def attach_container(container_id: str) -> None:
-    os.execvp("docker", ["docker", "start", "-ai", container_id])
+    # Start the container (runs entrypoint: config setup + sleep infinity).
+    # Then exec with -it so Docker puts the host terminal into raw mode —
+    # docker start -ai skips that step, breaking Enter in TUI applications.
+    subprocess.run(["docker", "start", container_id], check=True, capture_output=True)
+    subprocess.run(["docker", "exec", "-it", container_id, "/root/.local/bin/claude"])
 
 
 def stop_container(docker_client, container_id: str) -> None:
