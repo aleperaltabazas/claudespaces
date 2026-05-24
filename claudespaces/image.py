@@ -16,7 +16,12 @@ def resolve_image(
     base_tag = _build_pre_claude_base(image, global_dockerfile, dockerfile, docker_client)
 
     base_dockerfile = Path(__file__).parent / "Dockerfile.base"
-    dockerfile_hash = hashlib.md5(base_dockerfile.read_bytes()).hexdigest()[:12]
+    hasher = hashlib.md5(base_dockerfile.read_bytes())
+    support_dir = base_dockerfile.parent / "support"
+    for f in sorted(support_dir.rglob("*")):
+        if f.is_file():
+            hasher.update(f.read_bytes())
+    dockerfile_hash = hasher.hexdigest()[:12]
     intermediate_tag = "claudespaces-base:" + re.sub(r"[:/]", "-", base_tag) + "-" + dockerfile_hash
 
     try:
