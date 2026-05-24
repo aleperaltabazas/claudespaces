@@ -62,6 +62,16 @@ def test_create_sets_container_options(client, tmp_path):
     assert "command" not in kwargs
 
 
+def test_create_sets_is_sandbox_env(client, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+
+    create_container(client, "image", [str(proj)])
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["environment"]["IS_SANDBOX"] == "1"
+
+
 def test_create_returns_container_id(client, tmp_path):
     proj = tmp_path / "proj"
     proj.mkdir()

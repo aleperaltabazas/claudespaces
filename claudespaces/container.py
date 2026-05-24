@@ -55,6 +55,7 @@ def create_container(docker_client, image: str, dirs: list[str]) -> str:
         user=CONTAINER_USER,
         working_dir="/workspace",
         mounts=mounts,
+        environment={"IS_SANDBOX": "1"},
     )
     return container.id
 

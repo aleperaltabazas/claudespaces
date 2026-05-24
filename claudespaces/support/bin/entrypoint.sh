@@ -10,4 +10,4 @@ if [ -f /claudespaces/.claude.json ]; then
     cp /claudespaces/.claude.json ~/.claude.json
 fi
 
-exec /root/.local/bin/claude "$@"
+IS_SANDBOX=1 exec /root/.local/bin/claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --enable-auto-mode --add-dir / "$@"
