@@ -1,16 +1,10 @@
 import os
-import subprocess
+from pathlib import Path
 
 import docker
 from docker.types import Mount
 
-CLAUDE_CONFIG_PATHS = [
-    (".credentials.json", "/root/.claude/.credentials.json"),
-    ("settings.json", "/root/.claude/settings.json"),
-    ("CLAUDE.md", "/root/.claude/CLAUDE.md"),
-    ("plugins", "/root/.claude/plugins"),
-    ("skills", "/root/.claude/skills"),
-]
+CONTAINER_USER = "root"
 
 
 def get_running_container_ids(docker_client) -> set[str]:
@@ -18,7 +12,7 @@ def get_running_container_ids(docker_client) -> set[str]:
     return {c.id for c in containers}
 
 
-def create_container(docker_client, image: str, dirs: list[str], claude_dir: str) -> str:
+def create_container(docker_client, image: str, dirs: list[str]) -> str:
     basenames = [os.path.basename(d) for d in dirs]
     if len(basenames) != len(set(basenames)):
         dup = next(b for b in basenames if basenames.count(b) > 1)
@@ -34,30 +28,38 @@ def create_container(docker_client, image: str, dirs: list[str], claude_dir: str
             read_only=False,
         ))
 
-    for rel_path, container_path in CLAUDE_CONFIG_PATHS:
-        host_path = os.path.join(claude_dir, rel_path)
-        if os.path.exists(host_path):
-            mounts.append(Mount(
-                target=container_path,
-                source=host_path,
-                type="bind",
-                read_only=True,
-            ))
+    home = Path.home()
+    claude_dir = home / ".claude"
+    claude_json = home / ".claude.json"
+
+    if claude_dir.exists():
+        mounts.append(Mount(
+            target="/claudespaces/.claude",
+            source=str(claude_dir),
+            type="bind",
+            read_only=True,
+        ))
+    if claude_json.exists():
+        mounts.append(Mount(
+            target="/claudespaces/.claude.json",
+            source=str(claude_json),
+            type="bind",
+            read_only=True,
+        ))
 
     container = docker_client.containers.create(
         image=image,
-        command=["claude"],
         tty=True,
         stdin_open=True,
+        user=CONTAINER_USER,
         working_dir="/workspace",
         mounts=mounts,
     )
     return container.id
 
 
-def attach_container(container_id: str) -> int:
-    result = subprocess.run(["docker", "start", "-ai", container_id])
-    return result.returncode
+def attach_container(container_id: str) -> None:
+    os.execvp("docker", ["docker", "start", "-ai", container_id])
 
 
 def stop_container(docker_client, container_id: str) -> None:
