@@ -28,7 +28,6 @@ def mock_container(mocker):
     m = mocker.patch("claudespaces.cli.container")
     m.get_running_container_ids.return_value = set()
     m.create_container.return_value = "container123"
-    m.attach_container.return_value = 0
     return m
 
 
@@ -102,19 +101,6 @@ def test_first_run_saves_session(
     assert saved["status"] == "running"
     assert saved["name"] == "bold-space"
 
-
-def test_session_marked_stopped_after_attach(
-    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config
-):
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    mock_sessions.get_sessions_for_dirs.return_value = []
-
-    runner.invoke(app, [str(proj)])
-
-    mock_sessions.update_session.assert_called()
-    update_kwargs = mock_sessions.update_session.call_args.kwargs
-    assert update_kwargs["status"] == "stopped"
 
 
 def test_existing_sessions_shows_selector(

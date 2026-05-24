@@ -55,6 +55,8 @@ def main(
         typer.echo(str(e))
         raise typer.Exit(1)
 
+    global_dockerfile = cfg.get("global_dockerfile")
+
     if image_name is None and dockerfile is None:
         image_name = cfg.get("image")
         dockerfile = cfg.get("dockerfile")
@@ -87,18 +89,13 @@ def main(
             raise typer.Exit(1)
         resolved_dirs.append(abs_d)
 
-    credentials_path = Path.home() / ".claude" / ".credentials.json"
-    if not credentials_path.exists():
-        typer.echo(
-            "Warning: ~/.claude/.credentials.json not found. "
-            "Claude will prompt you to log in inside the container."
-        )
-
+    if global_dockerfile:
+        global_dockerfile = os.path.abspath(os.path.expanduser(global_dockerfile))
     if dockerfile:
         dockerfile = os.path.abspath(os.path.expanduser(dockerfile))
 
     try:
-        resolved_image = image.resolve_image(image_name, dockerfile, docker_client)
+        resolved_image = image.resolve_image(image_name, global_dockerfile, dockerfile, docker_client)
     except FileNotFoundError as e:
         typer.echo(str(e))
         raise typer.Exit(1)
@@ -145,11 +142,9 @@ def main(
             action = "resume"
             selected = sessions.get_session_by_id(selected_id)
 
-    claude_dir = str(Path.home() / ".claude")
-
     if action == "new":
         container_id = container.create_container(
-            docker_client, resolved_image, resolved_dirs, claude_dir
+            docker_client, resolved_image, resolved_dirs
         )
         existing_names = {s["name"] for s in sessions.all_sessions()}
         session = {
@@ -163,19 +158,12 @@ def main(
             "status": "running",
         }
         sessions.save_session(session)
-        session_id = session["id"]
-        try:
-            container.attach_container(container_id)
-        finally:
-            sessions.update_session(session_id, status="stopped", last_used_at=_now_utc())
+        container.attach_container(container_id)
     else:
         session_id = selected["id"]
         container_id = selected["container_id"]
         sessions.update_session(session_id, status="running")
-        try:
-            container.attach_container(container_id)
-        finally:
-            sessions.update_session(session_id, status="stopped", last_used_at=_now_utc())
+        container.attach_container(container_id)
 
 
 @app.command()
