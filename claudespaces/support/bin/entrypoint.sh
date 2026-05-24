@@ -2,7 +2,8 @@
 set -e
 
 if [ -d /claudespaces/.claude ]; then
-    cp -r /claudespaces/.claude ~/.claude
+    mkdir -p ~/.claude
+    cp -r /claudespaces/.claude/. ~/.claude/
 fi
 
 if [ -f /claudespaces/.claude.json ]; then
