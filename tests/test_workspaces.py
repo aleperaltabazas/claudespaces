@@ -66,6 +66,11 @@ def test_update_workspace_leaves_other_fields_intact():
     assert workspaces.get_workspace_by_name("bold-space")["dirs"] == ["/home/user/proj1"]
 
 
+def test_update_workspace_raises_for_unknown_name():
+    with pytest.raises(ValueError, match="Workspace not found"):
+        workspaces.update_workspace("nope", status="stopped")
+
+
 def test_remove_workspace_removes_correct_record():
     workspaces.save_workspace(_w(name="ws-a"))
     workspaces.save_workspace(_w(name="ws-b"))

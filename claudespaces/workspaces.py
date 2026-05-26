@@ -78,7 +78,9 @@ def update_workspace(name: str, **fields) -> None:
     for w in data:
         if w["name"] == name:
             w.update(fields)
-    _save(data)
+            _save(data)
+            return
+    raise ValueError(f"Workspace not found: {name}")
 
 
 def remove_workspace(name: str) -> None:
