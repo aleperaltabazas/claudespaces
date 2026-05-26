@@ -106,43 +106,21 @@ def main(
                 typer.echo(entry["stream"], nl=False)
         raise typer.Exit(1)
 
+    stale_container_ids = sessions.deduplicate_sessions()
+    for cid in stale_container_ids:
+        container.remove_container(docker_client, cid)
+
     running_ids = container.get_running_container_ids(docker_client)
     sessions.heal_running_sessions(running_ids)
 
     existing = sessions.get_sessions_for_dirs(resolved_dirs)
 
-    if not existing:
-        action = "new"
-        selected = None
+    if existing:
+        session = existing[0]
+        session_id = session["id"]
+        container_id = session["container_id"]
+        sessions.update_session(session_id, status="running")
     else:
-        choices = [questionary.Choice("[ New session ]", value="__new__")]
-        for s in existing:
-            dt = datetime.fromisoformat(s["last_used_at"].replace("Z", "+00:00"))
-            local_time = dt.astimezone().strftime("%Y-%m-%d %H:%M")
-            label = f"{s['name']}   {s['status']}   {local_time}"
-            is_running = s["status"] == "running"
-            choices.append(questionary.Choice(
-                label,
-                value=s["id"],
-                disabled="running" if is_running else False,
-            ))
-
-        try:
-            selected_id = questionary.select("Select a session:", choices=choices).ask()
-        except KeyboardInterrupt:
-            raise typer.Exit(0)
-
-        if selected_id is None:
-            raise typer.Exit(0)
-
-        if selected_id == "__new__":
-            action = "new"
-            selected = None
-        else:
-            action = "resume"
-            selected = sessions.get_session_by_id(selected_id)
-
-    if action == "new":
         container_id = container.create_container(
             docker_client, resolved_image, resolved_dirs
         )
@@ -159,10 +137,6 @@ def main(
         }
         sessions.save_session(session)
         session_id = session["id"]
-    else:
-        session_id = selected["id"]
-        container_id = selected["container_id"]
-        sessions.update_session(session_id, status="running")
 
     try:
         container.attach_container(container_id)

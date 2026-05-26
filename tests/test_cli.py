@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from typer.testing import CliRunner
 from claudespaces.cli import app
 
@@ -19,6 +19,7 @@ def mock_sessions(mocker):
     m.get_sessions_for_dirs.return_value = []
     m.all_sessions.return_value = []
     m.heal_running_sessions.return_value = None
+    m.deduplicate_sessions.return_value = []
     m.generate_name.return_value = "bold-space"
     return m
 
@@ -43,11 +44,6 @@ def mock_config(mocker):
     m = mocker.patch("claudespaces.cli.config")
     m.load_config.return_value = {}
     return m
-
-
-@pytest.fixture
-def mock_questionary(mocker):
-    return mocker.patch("claudespaces.cli.questionary")
 
 
 def test_exits_1_when_docker_unreachable(mocker, tmp_path, mock_config):
@@ -118,8 +114,8 @@ def test_session_marked_stopped_and_container_stopped_after_attach(
     mock_container.stop_container.assert_called_once()
 
 
-def test_existing_sessions_shows_selector(
-    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config, mock_questionary
+def test_existing_session_auto_attaches(
+    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -129,75 +125,6 @@ def test_existing_sessions_shows_selector(
         "last_used_at": "2026-05-17T14:32:00Z",
     }]
     mock_sessions.get_sessions_for_dirs.return_value = existing
-    mock_questionary.select.return_value.ask.return_value = "__new__"
-    mock_questionary.Choice = MagicMock(side_effect=lambda *a, **kw: {"title": a[0], **kw})
-
-    runner.invoke(app, [str(proj)])
-
-    mock_questionary.select.assert_called_once()
-
-
-def test_running_sessions_are_disabled_in_selector(
-    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config, mock_questionary
-):
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    existing = [{
-        "id": "abc12345", "name": "bold-space", "dirs": [str(proj)],
-        "container_id": "c1", "status": "running",
-        "last_used_at": "2026-05-17T14:32:00Z",
-    }]
-    mock_sessions.get_sessions_for_dirs.return_value = existing
-
-    choices_captured = []
-    def capture_select(prompt, choices):
-        choices_captured.extend(choices)
-        return MagicMock(ask=MagicMock(return_value=None))
-
-    mock_questionary.select.side_effect = capture_select
-    mock_questionary.Choice.side_effect = lambda title, value=None, disabled=None: {
-        "title": title, "value": value, "disabled": disabled
-    }
-
-    runner.invoke(app, [str(proj)])
-
-    running_choice = next(c for c in choices_captured if c.get("value") == "abc12345")
-    assert running_choice["disabled"]
-
-
-def test_selecting_new_session_creates_container(
-    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config, mock_questionary
-):
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    existing = [{
-        "id": "abc12345", "name": "bold-space", "dirs": [str(proj)],
-        "container_id": "c1", "status": "stopped",
-        "last_used_at": "2026-05-17T14:32:00Z",
-    }]
-    mock_sessions.get_sessions_for_dirs.return_value = existing
-    mock_questionary.Choice = MagicMock(side_effect=lambda *a, **kw: {"value": kw.get("value", a[0] if a else None)})
-    mock_questionary.select.return_value.ask.return_value = "__new__"
-
-    runner.invoke(app, [str(proj)])
-
-    mock_container.create_container.assert_called_once()
-
-
-def test_selecting_existing_session_resumes_it(
-    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config, mock_questionary
-):
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    existing = [{
-        "id": "abc12345", "name": "bold-space", "dirs": [str(proj)],
-        "container_id": "c1", "status": "stopped",
-        "last_used_at": "2026-05-17T14:32:00Z",
-    }]
-    mock_sessions.get_sessions_for_dirs.return_value = existing
-    mock_sessions.get_session_by_id.return_value = existing[0]
-    mock_questionary.Choice = MagicMock(side_effect=lambda *a, **kw: {"value": kw.get("value", a[0] if a else None)})
-    mock_questionary.select.return_value.ask.return_value = "abc12345"
 
     runner.invoke(app, [str(proj)])
 
@@ -205,24 +132,17 @@ def test_selecting_existing_session_resumes_it(
     mock_container.attach_container.assert_called_once_with("c1")
 
 
-def test_selector_cancel_exits_cleanly(
-    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config, mock_questionary
+def test_deduplicate_sessions_called_on_startup(
+    tmp_path, mock_docker, mock_sessions, mock_container, mock_image, mock_config
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
-    existing = [{
-        "id": "abc12345", "name": "bold-space", "dirs": [str(proj)],
-        "container_id": "c1", "status": "stopped",
-        "last_used_at": "2026-05-17T14:32:00Z",
-    }]
-    mock_sessions.get_sessions_for_dirs.return_value = existing
-    mock_questionary.Choice = MagicMock(side_effect=lambda *a, **kw: kw)
-    mock_questionary.select.return_value.ask.return_value = None
+    mock_sessions.get_sessions_for_dirs.return_value = []
+    mock_sessions.deduplicate_sessions.return_value = []
 
-    result = runner.invoke(app, [str(proj)])
+    runner.invoke(app, [str(proj)])
 
-    assert result.exit_code == 0
-    mock_container.create_container.assert_not_called()
+    mock_sessions.deduplicate_sessions.assert_called_once()
 
 
 def test_list_no_sessions(mock_sessions):
