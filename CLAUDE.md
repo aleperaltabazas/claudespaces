@@ -37,7 +37,7 @@ Five focused modules with `cli.py` as the only integration point:
 
 **Typer routing fix:** Typer/Click treats the first positional arg as a potential subcommand name. `_PathAwareGroup.invoke` checks `ctx._protected_args[0]` against registered command names and moves it back to `ctx.args` if it's not a known command — this is how `claudespaces ~/proj` and `claudespaces list` coexist.
 
-**Session lifecycle:** `status` is set to `"running"` before `attach_container` and back to `"stopped"` in a `try/finally` — this survives Python exceptions and `KeyboardInterrupt`. Auto-heal on startup detects containers that are no longer running (reboot, crash) and marks their sessions stopped.
+**Session lifecycle:** One session per unique sorted dir-set is enforced. On startup, `deduplicate_sessions` removes extras (keeping the most recently used) and returns stale container IDs for cleanup. Then `heal_running_sessions` marks sessions stopped if their container is no longer running (reboot, crash). `status` is set to `"running"` before `attach_container` and back to `"stopped"` in a `try/finally` — this survives Python exceptions and `KeyboardInterrupt`. If a session already exists for the requested dirs, it is auto-attached without any prompt; otherwise a new container and session are created.
 
 **Mount strategy:** User dirs mount at `/workspace/<basename>` (rw); five `~/.claude` paths mount at `/root/.claude/...` (ro) if they exist on the host. Basename collision across user dirs raises `ValueError` before any container is created.
 
