@@ -1,58 +1,36 @@
 import os
-import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import click
 import docker
-import questionary
 import typer
 
-from claudespaces import config, container, image, sessions
-from typer.core import TyperGroup
+from claudespaces import config, container, image, workspaces
 
-
-class _PathAwareGroup(TyperGroup):
-    """Allow bare directory paths as positional args alongside named subcommands.
-
-    Click normally routes the first positional token as a subcommand name.
-    If the token is not a registered command we move it (and all following
-    args) back into ``ctx.args`` so the ``invoke_without_command`` callback
-    can consume them as directory paths instead.
-    """
-
-    def invoke(self, ctx: click.Context) -> object:
-        if ctx._protected_args:
-            first = ctx._protected_args[0]
-            if first not in self.commands:
-                ctx.args = ctx._protected_args + ctx.args
-                ctx._protected_args = []
-        return super().invoke(ctx)
-
-
-app = typer.Typer(cls=_PathAwareGroup)
+app = typer.Typer()
 
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-@app.callback(invoke_without_command=True)
-def main(
-    ctx: typer.Context,
+@app.command()
+def new(
+    dirs: list[str] = typer.Argument(...),
+    named: Optional[str] = typer.Option(None, "--named"),
+    start: bool = typer.Option(False, "--start"),
     image_name: Optional[str] = typer.Option(None, "--image"),
     dockerfile: Optional[str] = typer.Option(None, "--dockerfile"),
 ) -> None:
-    if ctx.invoked_subcommand is not None:
-        return
-
-    dirs: list[str] = [*ctx.args] if ctx.args else []
-
     try:
         cfg = config.load_config()
     except ValueError as e:
         typer.echo(str(e))
+        raise typer.Exit(1)
+
+    if named is not None and workspaces.name_exists(named):
+        typer.echo(f"Workspace '{named}' already exists.")
         raise typer.Exit(1)
 
     global_dockerfile = cfg.get("global_dockerfile")
@@ -69,7 +47,7 @@ def main(
         if Path("claudespaces.yml").exists():
             all_dirs = [str(Path.cwd())]
         else:
-            typer.echo("No directories specified. Usage: claudespaces DIR [DIR...]")
+            typer.echo("No directories specified. Usage: claudespaces new DIR [DIR...]")
             raise typer.Exit(1)
 
     try:
@@ -106,52 +84,125 @@ def main(
                 typer.echo(entry["stream"], nl=False)
         raise typer.Exit(1)
 
-    stale_container_ids = sessions.deduplicate_sessions()
-    for cid in stale_container_ids:
-        container.remove_container(docker_client, cid)
-
     running_ids = container.get_running_container_ids(docker_client)
-    sessions.heal_running_sessions(running_ids)
-
-    existing = sessions.get_sessions_for_dirs(resolved_dirs)
-
-    if existing:
-        session = existing[0]
-        session_id = session["id"]
-        container_id = session["container_id"]
-        sessions.update_session(session_id, status="running")
-    else:
-        container_id = container.create_container(
-            docker_client, resolved_image, resolved_dirs
-        )
-        existing_names = {s["name"] for s in sessions.all_sessions()}
-        session = {
-            "id": secrets.token_hex(4),
-            "name": sessions.generate_name(existing_names),
-            "dirs": resolved_dirs,
-            "container_id": container_id,
-            "image": resolved_image,
-            "created_at": _now_utc(),
-            "last_used_at": _now_utc(),
-            "status": "running",
-        }
-        sessions.save_session(session)
-        session_id = session["id"]
+    workspaces.heal_running_workspaces(running_ids)
 
     try:
-        container.attach_container(container_id)
+        container_id = container.create_container(docker_client, resolved_image, resolved_dirs)
+    except ValueError as e:
+        typer.echo(str(e))
+        raise typer.Exit(1)
+
+    existing_names = {w["name"] for w in workspaces.all_workspaces()}
+    name = named if named is not None else workspaces.generate_name(existing_names)
+
+    workspace = {
+        "name": name,
+        "dirs": resolved_dirs,
+        "container_id": container_id,
+        "image": resolved_image,
+        "created_at": _now_utc(),
+        "last_used_at": _now_utc(),
+        "status": "stopped",
+    }
+    workspaces.save_workspace(workspace)
+    typer.echo(f"Created workspace '{name}'.")
+
+    if start:
+        workspaces.update_workspace(name, status="running")
+        try:
+            container.attach_container(container_id)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            workspaces.update_workspace(name, status="stopped", last_used_at=_now_utc())
+            container.stop_container(docker_client, container_id)
+
+
+@app.command()
+def start(name: str) -> None:
+    workspace = workspaces.get_workspace_by_name(name)
+    if workspace is None:
+        typer.echo(f"Workspace '{name}' not found.")
+        raise typer.Exit(1)
+
+    try:
+        docker_client = docker.from_env()
+    except Exception:
+        typer.echo("Docker is not running or not reachable.")
+        raise typer.Exit(1)
+
+    running_ids = container.get_running_container_ids(docker_client)
+    workspaces.heal_running_workspaces(running_ids)
+
+    workspace = workspaces.get_workspace_by_name(name)
+    if workspace["status"] == "running":
+        typer.echo(f"Workspace '{name}' is already running.")
+        raise typer.Exit(1)
+
+    workspaces.update_workspace(name, status="running")
+    try:
+        container.attach_container(workspace["container_id"])
     except KeyboardInterrupt:
         pass
     finally:
-        sessions.update_session(session_id, status="stopped", last_used_at=_now_utc())
-        container.stop_container(docker_client, container_id)
+        workspaces.update_workspace(name, status="stopped", last_used_at=_now_utc())
+        container.stop_container(docker_client, workspace["container_id"])
+
+
+@app.command()
+def stop(name: str) -> None:
+    workspace = workspaces.get_workspace_by_name(name)
+    if workspace is None:
+        typer.echo(f"Workspace '{name}' not found.")
+        raise typer.Exit(1)
+
+    if workspace["status"] == "stopped":
+        typer.echo(f"Workspace '{name}' is already stopped.")
+        raise typer.Exit(0)
+
+    try:
+        docker_client = docker.from_env()
+    except Exception:
+        typer.echo("Docker is not running or not reachable.")
+        raise typer.Exit(1)
+
+    try:
+        container.stop_container(docker_client, workspace["container_id"])
+    except Exception as e:
+        typer.echo(f"Failed to stop container: {e}")
+        raise typer.Exit(1)
+    workspaces.update_workspace(name, status="stopped")
+    typer.echo(f"Stopped workspace '{name}'.")
+
+
+@app.command()
+def remove(name: str) -> None:
+    workspace = workspaces.get_workspace_by_name(name)
+    if workspace is None:
+        typer.echo(f"Workspace '{name}' not found.")
+        raise typer.Exit(1)
+
+    try:
+        docker_client = docker.from_env()
+    except Exception:
+        typer.echo("Docker is not running or not reachable.")
+        raise typer.Exit(1)
+
+    try:
+        container.remove_container(docker_client, workspace["container_id"])
+    except Exception as e:
+        typer.echo(f"Failed to remove container: {e}")
+        raise typer.Exit(1)
+    workspaces.remove_workspace(name)
+    typer.echo(f"Removed workspace '{name}'.")
 
 
 @app.command()
 def list() -> None:
-    all_sess = sessions.all_sessions()
-    if not all_sess:
-        typer.echo("No sessions found.")
+    all_ws = workspaces.all_workspaces()
+    if not all_ws:
+        typer.echo("No workspaces found.")
         raise typer.Exit(0)
 
     home = str(Path.home())
@@ -167,58 +218,10 @@ def list() -> None:
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         return dt.astimezone().strftime("%Y-%m-%d %H:%M")
 
-    sorted_all = sorted(all_sess, key=lambda s: s["last_used_at"], reverse=True)
-    typer.echo(f"{'ID':<10}{'NAME':<14}{'STATUS':<10}{'DIRS':<42}LAST USED")
-    typer.echo("-" * 90)
-    for s in sorted_all:
+    sorted_all = sorted(all_ws, key=lambda w: w["last_used_at"], reverse=True)
+    typer.echo(f"{'NAME':<20}{'STATUS':<10}{'DIRS':<42}LAST USED")
+    typer.echo("-" * 85)
+    for w in sorted_all:
         typer.echo(
-            f"{s['id']:<10}{s['name']:<14}{s['status']:<10}{fmt_dirs(s['dirs']):<42}{fmt_time(s['last_used_at'])}"
+            f"{w['name']:<20}{w['status']:<10}{fmt_dirs(w['dirs']):<42}{fmt_time(w['last_used_at'])}"
         )
-
-
-@app.command()
-def stop(session_id: str) -> None:
-    session = sessions.get_session_by_id(session_id)
-    if session is None:
-        typer.echo(f"Session not found: {session_id}")
-        raise typer.Exit(1)
-
-    if session["status"] == "stopped":
-        typer.echo(f"Session {session['name']} ({session_id}) is already stopped.")
-        raise typer.Exit(0)
-
-    try:
-        docker_client = docker.from_env()
-    except Exception:
-        typer.echo("Docker is not running or not reachable.")
-        raise typer.Exit(1)
-
-    try:
-        container.stop_container(docker_client, session["container_id"])
-    except Exception as e:
-        typer.echo(f"Failed to stop container: {e}")
-        raise typer.Exit(1)
-    sessions.update_session(session_id, status="stopped")
-    typer.echo(f"Stopped session {session['name']} ({session_id}).")
-
-
-@app.command()
-def remove(session_id: str) -> None:
-    session = sessions.get_session_by_id(session_id)
-    if session is None:
-        typer.echo(f"Session not found: {session_id}")
-        raise typer.Exit(1)
-
-    try:
-        docker_client = docker.from_env()
-    except Exception:
-        typer.echo("Docker is not running or not reachable.")
-        raise typer.Exit(1)
-
-    try:
-        container.remove_container(docker_client, session["container_id"])
-    except Exception as e:
-        typer.echo(f"Failed to remove container: {e}")
-        raise typer.Exit(1)
-    sessions.remove_session(session_id)
-    typer.echo(f"Removed session {session['name']} ({session_id}).")
