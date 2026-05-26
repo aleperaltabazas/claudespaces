@@ -123,3 +123,43 @@ def test_generate_name_avoids_collisions():
     name = sessions.generate_name(all_names)
     assert name not in all_names
     assert name == f"{sessions.ADJECTIVES[0]}-{sessions.NOUNS[0]}"
+
+
+def test_deduplicate_no_op_when_no_duplicates():
+    sessions.save_session(_s(id="aaa", dirs=["/a"]))
+    sessions.save_session(_s(id="bbb", dirs=["/b"]))
+    removed = sessions.deduplicate_sessions()
+    assert removed == []
+    assert len(sessions.all_sessions()) == 2
+
+
+def test_deduplicate_keeps_most_recent_for_dirs():
+    sessions.save_session(_s(id="aaa", dirs=["/a"], last_used_at="2026-05-18T10:00:00Z"))
+    sessions.save_session(_s(id="bbb", dirs=["/a"], last_used_at="2026-05-18T12:00:00Z"))
+    sessions.deduplicate_sessions()
+    remaining = sessions.all_sessions()
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == "bbb"
+
+
+def test_deduplicate_returns_stale_container_ids():
+    sessions.save_session(_s(id="aaa", dirs=["/a"], container_id="c_old", last_used_at="2026-05-18T10:00:00Z"))
+    sessions.save_session(_s(id="bbb", dirs=["/a"], container_id="c_new", last_used_at="2026-05-18T12:00:00Z"))
+    removed = sessions.deduplicate_sessions()
+    assert removed == ["c_old"]
+
+
+def test_deduplicate_handles_empty_state():
+    removed = sessions.deduplicate_sessions()
+    assert removed == []
+
+
+def test_deduplicate_only_removes_duplicates_for_same_dirs():
+    sessions.save_session(_s(id="aaa", dirs=["/a"], container_id="c1", last_used_at="2026-05-18T10:00:00Z"))
+    sessions.save_session(_s(id="bbb", dirs=["/a"], container_id="c2", last_used_at="2026-05-18T12:00:00Z"))
+    sessions.save_session(_s(id="ccc", dirs=["/b"], container_id="c3", last_used_at="2026-05-18T08:00:00Z"))
+    removed = sessions.deduplicate_sessions()
+    assert removed == ["c1"]
+    assert len(sessions.all_sessions()) == 2
+    ids = {s["id"] for s in sessions.all_sessions()}
+    assert ids == {"bbb", "ccc"}

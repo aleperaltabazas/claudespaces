@@ -84,6 +84,29 @@ def heal_running_sessions(running_container_ids: set[str]) -> None:
         _save(data)
 
 
+def deduplicate_sessions() -> list[str]:
+    data = _load()
+    by_dirs: dict[tuple, list[dict]] = {}
+    for s in data:
+        key = tuple(s["dirs"])
+        by_dirs.setdefault(key, []).append(s)
+
+    stale_ids: set[str] = set()
+    stale_container_ids: list[str] = []
+    for group in by_dirs.values():
+        if len(group) <= 1:
+            continue
+        sorted_group = sorted(group, key=lambda s: s["last_used_at"], reverse=True)
+        for stale in sorted_group[1:]:
+            stale_ids.add(stale["id"])
+            stale_container_ids.append(stale["container_id"])
+
+    if stale_ids:
+        _save([s for s in data if s["id"] not in stale_ids])
+
+    return stale_container_ids
+
+
 def generate_name(existing_names: set[str]) -> str:
     for _ in range(10_000):
         name = f"{random.choice(ADJECTIVES)}-{random.choice(NOUNS)}"
