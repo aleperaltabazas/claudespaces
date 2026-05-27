@@ -98,6 +98,10 @@ def heal_running_workspaces(running_container_ids: set[str]) -> None:
         _save(data)
 
 
+def state_dir(name: str) -> Path:
+    return Path.home() / ".claudespaces" / name
+
+
 def generate_name(existing_names: set[str]) -> str:
     for _ in range(10_000):
         name = f"{random.choice(ADJECTIVES)}-{random.choice(NOUNS)}"

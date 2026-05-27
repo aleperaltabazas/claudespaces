@@ -1,4 +1,5 @@
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -87,14 +88,24 @@ def new(
     running_ids = container.get_running_container_ids(docker_client)
     workspaces.heal_running_workspaces(running_ids)
 
+    existing_names = {w["name"] for w in workspaces.all_workspaces()}
+    name = named if named is not None else workspaces.generate_name(existing_names)
+
+    sd = workspaces.state_dir(name)
+    sd.mkdir(parents=True, exist_ok=True)
+    (sd / "projects").mkdir(exist_ok=True)
+    claude_json = sd / "claude.json"
+    if not claude_json.exists():
+        host_claude_json = Path.home() / ".claude.json"
+        claude_json.write_text(
+            host_claude_json.read_text() if host_claude_json.exists() else "{}"
+        )
+
     try:
-        container_id = container.create_container(docker_client, resolved_image, resolved_dirs)
+        container_id = container.create_container(docker_client, resolved_image, resolved_dirs, state_dir=sd)
     except ValueError as e:
         typer.echo(str(e))
         raise typer.Exit(1)
-
-    existing_names = {w["name"] for w in workspaces.all_workspaces()}
-    name = named if named is not None else workspaces.generate_name(existing_names)
 
     workspace = {
         "name": name,
@@ -195,6 +206,9 @@ def remove(name: str) -> None:
         typer.echo(f"Failed to remove container: {e}")
         raise typer.Exit(1)
     workspaces.remove_workspace(name)
+    sd = workspaces.state_dir(name)
+    if sd.exists():
+        shutil.rmtree(sd)
     typer.echo(f"Removed workspace '{name}'.")
 
 

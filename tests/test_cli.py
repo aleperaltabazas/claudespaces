@@ -21,6 +21,7 @@ def mock_workspaces(mocker):
     m.generate_name.return_value = "bold-space"
     m.name_exists.return_value = False
     m.get_workspace_by_name.return_value = None
+    m.state_dir.return_value.exists.return_value = False
     return m
 
 
@@ -145,6 +146,44 @@ def test_new_exits_1_when_path_is_not_a_directory(mock_docker, mock_config, tmp_
     assert "Not a directory" in result.output
 
 
+def test_new_creates_state_dir(
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    state = tmp_path / "state" / "bold-space"
+    mock_workspaces.state_dir.return_value = state
+    result = runner.invoke(app, ["new", str(proj)])
+    assert result.exit_code == 0
+    assert state.exists()
+    assert state.is_dir()
+
+
+def test_new_creates_claude_json(
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    state = tmp_path / "state" / "bold-space"
+    mock_workspaces.state_dir.return_value = state
+    result = runner.invoke(app, ["new", str(proj)])
+    assert result.exit_code == 0
+    assert (state / "claude.json").exists()
+
+
+def test_new_creates_projects_dir(
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    state = tmp_path / "state" / "bold-space"
+    mock_workspaces.state_dir.return_value = state
+    result = runner.invoke(app, ["new", str(proj)])
+    assert result.exit_code == 0
+    assert (state / "projects").exists()
+    assert (state / "projects").is_dir()
+
+
 # --- start ---
 
 def test_start_attaches_to_workspace(mock_docker, mock_workspaces, mock_container):
@@ -261,6 +300,20 @@ def test_remove_when_container_already_gone(mock_docker, mock_workspaces, mock_c
     result = runner.invoke(app, ["remove", "my-game"])
     assert result.exit_code == 0
     mock_workspaces.remove_workspace.assert_called_once_with("my-game")
+
+
+def test_remove_deletes_state_dir(tmp_path, mock_docker, mock_workspaces, mock_container):
+    mock_workspaces.get_workspace_by_name.return_value = {
+        "name": "my-game", "container_id": "c1", "status": "stopped",
+    }
+    state = tmp_path / "state" / "my-game"
+    state.mkdir(parents=True)
+    (state / "claude.json").write_text("{}")
+    (state / "projects").mkdir()
+    mock_workspaces.state_dir.return_value = state
+    result = runner.invoke(app, ["remove", "my-game"])
+    assert result.exit_code == 0
+    assert not state.exists()
 
 
 # --- list ---
