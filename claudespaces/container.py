@@ -13,7 +13,7 @@ def get_running_container_ids(docker_client) -> set[str]:
     return {c.id for c in containers}
 
 
-def create_container(docker_client, image: str, dirs: list[str]) -> str:
+def create_container(docker_client, image: str, dirs: list[str], state_dir: Path) -> str:
     basenames = [os.path.basename(d) for d in dirs]
     if len(basenames) != len(set(basenames)):
         dup = next(b for b in basenames if basenames.count(b) > 1)
@@ -29,24 +29,35 @@ def create_container(docker_client, image: str, dirs: list[str]) -> str:
             read_only=False,
         ))
 
-    home = Path.home()
-    claude_dir = home / ".claude"
-    claude_json = home / ".claude.json"
+    # Per-workspace state mounts (always added; cli.py ensures these exist)
+    mounts.append(Mount(
+        target="/root/.claude.json",
+        source=str(state_dir / "claude.json"),
+        type="bind",
+        read_only=False,
+    ))
+    mounts.append(Mount(
+        target="/root/.claude/projects",
+        source=str(state_dir / "projects"),
+        type="bind",
+        read_only=False,
+    ))
 
-    if claude_dir.exists():
-        mounts.append(Mount(
-            target="/claudespaces/.claude",
-            source=str(claude_dir),
-            type="bind",
-            read_only=True,
-        ))
-    if claude_json.exists():
-        mounts.append(Mount(
-            target="/claudespaces/.claude.json",
-            source=str(claude_json),
-            type="bind",
-            read_only=True,
-        ))
+    # Selective host config mounts (conditional on existence)
+    home = Path.home()
+    host_mounts = [
+        (home / ".claude" / "settings.json", "/claudespaces/host/settings.json"),
+        (home / ".claude" / "plugins", "/claudespaces/host/plugins"),
+        (home / ".claude" / ".credentials.json", "/claudespaces/host/credentials.json"),
+    ]
+    for source, target in host_mounts:
+        if source.exists():
+            mounts.append(Mount(
+                target=target,
+                source=str(source),
+                type="bind",
+                read_only=True,
+            ))
 
     container = docker_client.containers.create(
         image=image,
@@ -55,7 +66,7 @@ def create_container(docker_client, image: str, dirs: list[str]) -> str:
         user=CONTAINER_USER,
         working_dir="/workspace",
         mounts=mounts,
-        environment={"IS_SANDBOX": "1"},
+        environment={"IS_SANDBOX": "1", "HOST_HOME": str(Path.home())},
     )
     return container.id
 
