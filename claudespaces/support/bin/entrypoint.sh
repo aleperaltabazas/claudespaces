@@ -8,6 +8,7 @@ if [ -f /claudespaces/host/settings.json ]; then
 fi
 
 if [ -d /claudespaces/host/plugins ]; then
+    mkdir -p ~/.claude/plugins/
     cp -r /claudespaces/host/plugins/. ~/.claude/plugins/
     # Fix host-absolute installPath → /root/.claude/...
     if [ -f ~/.claude/plugins/installed_plugins.json ] && [ -n "$HOST_HOME" ]; then
