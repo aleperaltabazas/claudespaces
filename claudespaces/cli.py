@@ -151,6 +151,23 @@ def start(name: str) -> None:
         typer.echo(f"Workspace '{name}' is already running.")
         raise typer.Exit(1)
 
+    sd = workspaces.state_dir(name)
+    if not sd.exists():
+        typer.echo(f"Migrating workspace '{name}' to new mount layout...")
+        sd.mkdir(parents=True, exist_ok=True)
+        (sd / "projects").mkdir(exist_ok=True)
+        claude_json = sd / "claude.json"
+        host_claude_json = Path.home() / ".claude.json"
+        claude_json.write_text(
+            host_claude_json.read_text() if host_claude_json.exists() else "{}"
+        )
+        container.remove_container(docker_client, workspace["container_id"])
+        new_id = container.create_container(
+            docker_client, workspace["image"], workspace["dirs"], state_dir=sd
+        )
+        workspaces.update_workspace(name, container_id=new_id)
+        workspace = workspaces.get_workspace_by_name(name)
+
     workspaces.update_workspace(name, status="running")
     try:
         container.attach_container(workspace["container_id"])

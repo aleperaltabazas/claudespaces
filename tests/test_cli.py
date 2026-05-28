@@ -187,6 +187,7 @@ def test_new_creates_projects_dir(
 # --- start ---
 
 def test_start_attaches_to_workspace(mock_docker, mock_workspaces, mock_container):
+    mock_workspaces.state_dir.return_value.exists.return_value = True
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "stopped",
     }
@@ -213,6 +214,7 @@ def test_start_errors_when_already_running(mock_docker, mock_workspaces, mock_co
 
 
 def test_start_sets_status_running_before_attach(mock_docker, mock_workspaces, mock_container):
+    mock_workspaces.state_dir.return_value.exists.return_value = True
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "stopped",
     }
@@ -224,6 +226,7 @@ def test_start_sets_status_running_before_attach(mock_docker, mock_workspaces, m
 def test_start_sets_status_stopped_and_stops_container_after_attach(
     mock_docker, mock_workspaces, mock_container
 ):
+    mock_workspaces.state_dir.return_value.exists.return_value = True
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "stopped",
     }
@@ -241,6 +244,32 @@ def test_start_exits_1_when_docker_unreachable(mocker, mock_workspaces):
     result = runner.invoke(app, ["start", "my-game"])
     assert result.exit_code == 1
     assert "Docker is not running" in result.output
+
+
+def test_start_migrates_old_workspace_without_state_dir(
+    tmp_path, mock_docker, mock_workspaces, mock_container
+):
+    """When no state dir exists, start() recreates the container with new mounts."""
+    state_path = tmp_path / "my-ws-state"
+    mock_workspaces.state_dir.return_value = state_path
+    mock_workspaces.get_workspace_by_name.return_value = {
+        "name": "my-ws",
+        "container_id": "old-container",
+        "status": "stopped",
+        "image": "claudespaces-base:ubuntu-24.04",
+        "dirs": ["/home/user/workspace"],
+    }
+    mock_container.create_container.return_value = "new-container"
+
+    result = runner.invoke(app, ["start", "my-ws"])
+
+    assert result.exit_code == 0
+    mock_container.remove_container.assert_called_once()
+    mock_container.create_container.assert_called_once()
+    update_calls = mock_workspaces.update_workspace.call_args_list
+    assert any(
+        call.kwargs.get("container_id") == "new-container" for call in update_calls
+    )
 
 
 # --- stop ---
