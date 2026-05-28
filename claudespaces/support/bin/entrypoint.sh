@@ -10,9 +10,13 @@ fi
 if [ -d /claudespaces/host/plugins ]; then
     mkdir -p ~/.claude/plugins/
     cp -r /claudespaces/host/plugins/. ~/.claude/plugins/
-    # Fix host-absolute installPath → /root/.claude/...
-    if [ -f ~/.claude/plugins/installed_plugins.json ] && [ -n "$HOST_HOME" ]; then
-        sed -i "s|${HOST_HOME}/.claude|${HOME}/.claude|g" ~/.claude/plugins/installed_plugins.json
+    # Fix host-absolute paths → container paths in plugin metadata files
+    if [ -n "$HOST_HOME" ]; then
+        for f in ~/.claude/plugins/installed_plugins.json ~/.claude/plugins/known_marketplaces.json; do
+            if [ -f "$f" ]; then
+                sed -i "s|${HOST_HOME}/.claude|${HOME}/.claude|g" "$f"
+            fi
+        done
     fi
 fi
 

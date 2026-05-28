@@ -203,6 +203,25 @@ def test_create_skips_host_mounts_when_absent(client, tmp_path, state_dir, monke
     assert "/claudespaces/host/credentials.json" not in targets
 
 
+def test_create_mounts_entrypoint_from_package(client, tmp_path, state_dir, monkeypatch):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr("claudespaces.container.Path.home", lambda: fake_home)
+
+    create_container(client, "image", [str(proj)], state_dir)
+
+    kwargs = client.containers.create.call_args.kwargs
+    entrypoint_mount = next(
+        (m for m in kwargs["mounts"] if m["Target"] == "/claudespaces/entrypoint.sh"),
+        None,
+    )
+    assert entrypoint_mount is not None, "entrypoint.sh should be bind-mounted"
+    assert entrypoint_mount["ReadOnly"] is True
+    assert entrypoint_mount["Source"].endswith("support/bin/entrypoint.sh")
+
+
 def test_create_sets_host_home_env(client, tmp_path, state_dir, monkeypatch):
     proj = tmp_path / "proj"
     proj.mkdir()

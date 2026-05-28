@@ -43,6 +43,17 @@ def create_container(docker_client, image: str, dirs: list[str], state_dir: Path
         read_only=False,
     ))
 
+    # Bind-mount the entrypoint from the installed package so it's always current,
+    # regardless of which image version is cached.
+    entrypoint_src = Path(__file__).parent / "support" / "bin" / "entrypoint.sh"
+    if entrypoint_src.exists():
+        mounts.append(Mount(
+            target="/claudespaces/entrypoint.sh",
+            source=str(entrypoint_src),
+            type="bind",
+            read_only=True,
+        ))
+
     # Selective host config mounts (conditional on existence)
     home = Path.home()
     host_mounts = [
