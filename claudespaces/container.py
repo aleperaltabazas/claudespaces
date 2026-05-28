@@ -96,6 +96,7 @@ def create_container(docker_client, image: str, dirs: list[str], state_dir: Path
         user=CONTAINER_USER,
         working_dir="/workspace",
         mounts=mounts,
+        extra_hosts={"host.docker.internal": "host-gateway"},
         environment={
             "IS_SANDBOX": "1",
             "HOST_HOME": str(Path.home()),

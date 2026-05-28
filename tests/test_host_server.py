@@ -116,3 +116,17 @@ def test_stop_server_if_last_leaves_server_when_others_running(tmp_path, monkeyp
 
     mock_kill.assert_not_called()
     assert pid_file.exists()
+
+
+def test_stop_server_if_last_handles_permission_error(tmp_path, monkeypatch):
+    pid_file = tmp_path / "host_bridge.pid"
+    pid_file.write_text("99999")
+    monkeypatch.setattr("claudespaces.host_server.PID_FILE", pid_file)
+
+    ws_list = [{"name": "ws1", "status": "stopped"}]
+
+    with patch("claudespaces.host_server.workspaces.all_workspaces", return_value=ws_list), \
+         patch("claudespaces.host_server.os.kill", side_effect=PermissionError):
+        stop_server_if_last("ws1")  # should not raise
+
+    assert not pid_file.exists()

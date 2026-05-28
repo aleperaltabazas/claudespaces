@@ -167,6 +167,13 @@ def start(name: str) -> None:
         typer.echo(f"Workspace '{name}' is already running.")
         raise typer.Exit(1)
 
+    try:
+        bridge = host_config.load_host_bridge()
+        host_config.write_shims(bridge["operations"])
+    except Exception as e:
+        typer.echo(f"Failed to load host bridge config: {e}")
+        raise typer.Exit(1)
+
     sd = workspaces.state_dir(name)
     if not sd.exists():
         typer.echo(f"Migrating workspace '{name}' to new mount layout...")
@@ -179,17 +186,12 @@ def start(name: str) -> None:
         )
         container.remove_container(docker_client, workspace["container_id"])
         new_id = container.create_container(
-            docker_client, workspace["image"], workspace["dirs"], state_dir=sd
+            docker_client, workspace["image"], workspace["dirs"], state_dir=sd,
+            host_port=bridge["port"]
         )
         workspaces.update_workspace(name, container_id=new_id)
         workspace = workspaces.get_workspace_by_name(name)
 
-    try:
-        bridge = host_config.load_host_bridge()
-        host_config.write_shims(bridge["operations"])
-    except Exception as e:
-        typer.echo(f"Failed to load host bridge config: {e}")
-        raise typer.Exit(1)
     _start_bridge(bridge["port"])
     workspaces.update_workspace(name, status="running")
     try:

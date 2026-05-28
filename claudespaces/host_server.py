@@ -110,7 +110,7 @@ def stop_server_if_last(stopped_name: str) -> None:
     pid = int(PID_FILE.read_text().strip())
     try:
         os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         pass
     PID_FILE.unlink(missing_ok=True)
 

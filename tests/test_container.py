@@ -296,3 +296,21 @@ def test_create_container_injects_host_port_env(tmp_path, mocker):
 
     env = mock_client.containers.create.call_args.kwargs["environment"]
     assert env["CLAUDESPACES_HOST_PORT"] == "9999"
+
+
+def test_create_container_adds_host_gateway(tmp_path, mocker):
+    mock_client = MagicMock()
+    mock_client.containers.create.return_value = MagicMock(id="abc")
+
+    mocker.patch("claudespaces.container.SHIMS_PATH", tmp_path / "nope.json")
+    mocker.patch("claudespaces.container._CLAUDESPACES_HOST_SRC", tmp_path / "nope")
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "projects").mkdir()
+    (state_dir / "claude.json").write_text("{}")
+
+    container.create_container(mock_client, "myimage", [str(tmp_path)], state_dir)
+
+    extra_hosts = mock_client.containers.create.call_args.kwargs["extra_hosts"]
+    assert extra_hosts == {"host.docker.internal": "host-gateway"}
