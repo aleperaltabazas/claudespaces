@@ -9,11 +9,12 @@ RUN apt update && apt install -y \
 
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
-RUN mkdir -p /workspace /claudespaces
+RUN mkdir -p /workspace /claudespaces /claudespaces/bin
 WORKDIR /workspace
 
 COPY support/bin/entrypoint.sh /claudespaces/entrypoint.sh
+COPY support/bin/claudespaces-host /claudespaces/bin/claudespaces-host
 
-RUN chmod +x /claudespaces/entrypoint.sh
+RUN chmod +x /claudespaces/entrypoint.sh /claudespaces/bin/claudespaces-host
 
 ENTRYPOINT ["sleep", "infinity"]
