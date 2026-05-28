@@ -7,13 +7,18 @@ from typing import Optional
 import docker
 import typer
 
-from claudespaces import config, container, image, workspaces
+from claudespaces import config, container, host_config, host_server, image, workspaces
 
 app = typer.Typer()
 
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _start_bridge(port: int) -> None:
+    if not host_server.is_running(port):
+        host_server.start_server()
 
 
 @app.command()
@@ -101,8 +106,13 @@ def new(
             host_claude_json.read_text() if host_claude_json.exists() else "{}"
         )
 
+    bridge = host_config.load_host_bridge()
+    host_config.write_shims(bridge["operations"])
+
     try:
-        container_id = container.create_container(docker_client, resolved_image, resolved_dirs, state_dir=sd)
+        container_id = container.create_container(
+            docker_client, resolved_image, resolved_dirs, state_dir=sd, host_port=bridge["port"]
+        )
     except ValueError as e:
         typer.echo(str(e))
         raise typer.Exit(1)
@@ -120,6 +130,7 @@ def new(
     typer.echo(f"Created workspace '{name}'.")
 
     if start:
+        _start_bridge(bridge["port"])
         workspaces.update_workspace(name, status="running")
         try:
             container.attach_container(container_id)
@@ -128,6 +139,7 @@ def new(
         finally:
             workspaces.update_workspace(name, status="stopped", last_used_at=_now_utc())
             container.stop_container(docker_client, container_id)
+            host_server.stop_server_if_last(name)
 
 
 @app.command()
@@ -168,6 +180,9 @@ def start(name: str) -> None:
         workspaces.update_workspace(name, container_id=new_id)
         workspace = workspaces.get_workspace_by_name(name)
 
+    bridge = host_config.load_host_bridge()
+    host_config.write_shims(bridge["operations"])
+    _start_bridge(bridge["port"])
     workspaces.update_workspace(name, status="running")
     try:
         container.attach_container(workspace["container_id"])
@@ -176,6 +191,7 @@ def start(name: str) -> None:
     finally:
         workspaces.update_workspace(name, status="stopped", last_used_at=_now_utc())
         container.stop_container(docker_client, workspace["container_id"])
+        host_server.stop_server_if_last(name)
 
 
 @app.command()
@@ -201,6 +217,7 @@ def stop(name: str) -> None:
         typer.echo(f"Failed to stop container: {e}")
         raise typer.Exit(1)
     workspaces.update_workspace(name, status="stopped")
+    host_server.stop_server_if_last(name)
     typer.echo(f"Stopped workspace '{name}'.")
 
 

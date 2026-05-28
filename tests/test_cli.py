@@ -368,3 +368,72 @@ def test_list_with_workspaces(mock_workspaces):
     assert result.exit_code == 0
     assert "bold-space" in result.output
     assert "stopped" in result.output
+
+
+@pytest.fixture
+def mock_host_server(mocker):
+    m = mocker.patch("claudespaces.cli.host_server")
+    m.is_running.return_value = False
+    return m
+
+
+@pytest.fixture
+def mock_host_config(mocker):
+    m = mocker.patch("claudespaces.cli.host_config")
+    m.load_host_bridge.return_value = {"port": 7731, "operations": {}}
+    m.overrides_manifest.return_value = {}
+    m.write_shims.return_value = None
+    m.DEFAULT_PORT = 7731
+    return m
+
+
+def test_start_spawns_bridge_when_port_free(
+    mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config
+):
+    mock_workspaces.get_workspace_by_name.return_value = {
+        "name": "my-ws",
+        "container_id": "abc",
+        "image": "img",
+        "status": "stopped",
+        "dirs": ["/some/dir"],
+    }
+    mock_workspaces.state_dir.return_value.exists.return_value = True
+    mock_host_server.is_running.return_value = False
+
+    runner.invoke(app, ["start", "my-ws"])
+
+    mock_host_server.start_server.assert_called_once()
+
+
+def test_start_skips_bridge_when_already_running(
+    mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config
+):
+    mock_workspaces.get_workspace_by_name.return_value = {
+        "name": "my-ws",
+        "container_id": "abc",
+        "image": "img",
+        "status": "stopped",
+        "dirs": ["/some/dir"],
+    }
+    mock_workspaces.state_dir.return_value.exists.return_value = True
+    mock_host_server.is_running.return_value = True
+
+    runner.invoke(app, ["start", "my-ws"])
+
+    mock_host_server.start_server.assert_not_called()
+
+
+def test_stop_kills_bridge_when_last_workspace(
+    mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config
+):
+    mock_workspaces.get_workspace_by_name.return_value = {
+        "name": "my-ws",
+        "container_id": "abc",
+        "image": "img",
+        "status": "running",
+        "dirs": ["/some/dir"],
+    }
+
+    runner.invoke(app, ["stop", "my-ws"])
+
+    mock_host_server.stop_server_if_last.assert_called_once_with("my-ws")
