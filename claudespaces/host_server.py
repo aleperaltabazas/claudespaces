@@ -11,6 +11,7 @@ from pathlib import Path
 from claudespaces import workspaces
 
 PID_FILE = Path.home() / ".claudespaces" / "host_bridge.pid"
+LOG_FILE = Path.home() / ".claudespaces" / "host_bridge.log"
 
 
 def handle_run(op_name: str, args, operations: dict) -> tuple[int, dict]:
@@ -81,12 +82,18 @@ def is_running(port: int) -> bool:
 
 def start_server() -> None:
     """Spawn the bridge server as a background process and record its PID."""
+    from claudespaces.host_config import load_host_bridge
+    bridge = load_host_bridge()
+    if is_running(bridge["port"]):
+        return
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "claudespaces.host_server"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG_FILE, "a") as log:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "claudespaces.host_server"],
+            stdout=subprocess.DEVNULL,
+            stderr=log,
+        )
     PID_FILE.write_text(str(proc.pid))
 
 
