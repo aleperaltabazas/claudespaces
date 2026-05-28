@@ -50,7 +50,8 @@ def mock_config(mocker):
 # --- new ---
 
 def test_new_creates_workspace(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -61,7 +62,8 @@ def test_new_creates_workspace(
 
 
 def test_new_uses_provided_name(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -71,7 +73,8 @@ def test_new_uses_provided_name(
 
 
 def test_new_generates_name_when_not_provided(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -81,7 +84,8 @@ def test_new_generates_name_when_not_provided(
 
 
 def test_new_errors_when_name_already_exists(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -93,7 +97,8 @@ def test_new_errors_when_name_already_exists(
 
 
 def test_new_saves_workspace_as_stopped(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -103,7 +108,8 @@ def test_new_saves_workspace_as_stopped(
 
 
 def test_new_with_start_attaches_after_create(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -113,7 +119,8 @@ def test_new_with_start_attaches_after_create(
 
 
 def test_new_with_start_sets_status_stopped_after_attach(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -123,7 +130,7 @@ def test_new_with_start_sets_status_stopped_after_attach(
     assert any(call.kwargs.get("status") == "stopped" for call in update_calls)
 
 
-def test_new_exits_1_when_docker_unreachable(tmp_path, mocker, mock_config):
+def test_new_exits_1_when_docker_unreachable(tmp_path, mocker, mock_config, mock_host_server, mock_host_config):
     mocker.patch("claudespaces.cli.docker.from_env", side_effect=Exception("no docker"))
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -132,13 +139,13 @@ def test_new_exits_1_when_docker_unreachable(tmp_path, mocker, mock_config):
     assert "Docker is not running" in result.output
 
 
-def test_new_exits_1_when_directory_not_found(mock_docker, mock_config):
+def test_new_exits_1_when_directory_not_found(mock_docker, mock_config, mock_host_server, mock_host_config):
     result = runner.invoke(app, ["new", "/nonexistent/path/xyz"])
     assert result.exit_code == 1
     assert "Directory not found" in result.output
 
 
-def test_new_exits_1_when_path_is_not_a_directory(mock_docker, mock_config, tmp_path):
+def test_new_exits_1_when_path_is_not_a_directory(mock_docker, mock_config, tmp_path, mock_host_server, mock_host_config):
     f = tmp_path / "file.txt"
     f.write_text("hello")
     result = runner.invoke(app, ["new", str(f)])
@@ -147,7 +154,8 @@ def test_new_exits_1_when_path_is_not_a_directory(mock_docker, mock_config, tmp_
 
 
 def test_new_creates_state_dir(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -160,7 +168,8 @@ def test_new_creates_state_dir(
 
 
 def test_new_creates_claude_json(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -172,7 +181,8 @@ def test_new_creates_claude_json(
 
 
 def test_new_creates_projects_dir(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
+    mock_host_server, mock_host_config,
 ):
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -186,7 +196,7 @@ def test_new_creates_projects_dir(
 
 # --- start ---
 
-def test_start_attaches_to_workspace(mock_docker, mock_workspaces, mock_container):
+def test_start_attaches_to_workspace(mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config):
     mock_workspaces.state_dir.return_value.exists.return_value = True
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "stopped",
@@ -196,14 +206,14 @@ def test_start_attaches_to_workspace(mock_docker, mock_workspaces, mock_containe
     assert result.exit_code == 0
 
 
-def test_start_errors_when_workspace_not_found(mock_workspaces):
+def test_start_errors_when_workspace_not_found(mock_workspaces, mock_host_server, mock_host_config):
     mock_workspaces.get_workspace_by_name.return_value = None
     result = runner.invoke(app, ["start", "nope"])
     assert result.exit_code == 1
     assert "Workspace 'nope' not found." in result.output
 
 
-def test_start_errors_when_already_running(mock_docker, mock_workspaces, mock_container):
+def test_start_errors_when_already_running(mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config):
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "running",
     }
@@ -213,7 +223,7 @@ def test_start_errors_when_already_running(mock_docker, mock_workspaces, mock_co
     mock_container.attach_container.assert_not_called()
 
 
-def test_start_sets_status_running_before_attach(mock_docker, mock_workspaces, mock_container):
+def test_start_sets_status_running_before_attach(mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config):
     mock_workspaces.state_dir.return_value.exists.return_value = True
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "stopped",
@@ -224,7 +234,7 @@ def test_start_sets_status_running_before_attach(mock_docker, mock_workspaces, m
 
 
 def test_start_sets_status_stopped_and_stops_container_after_attach(
-    mock_docker, mock_workspaces, mock_container
+    mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config,
 ):
     mock_workspaces.state_dir.return_value.exists.return_value = True
     mock_workspaces.get_workspace_by_name.return_value = {
@@ -236,7 +246,7 @@ def test_start_sets_status_stopped_and_stops_container_after_attach(
     mock_container.stop_container.assert_called_once()
 
 
-def test_start_exits_1_when_docker_unreachable(mocker, mock_workspaces):
+def test_start_exits_1_when_docker_unreachable(mocker, mock_workspaces, mock_host_server, mock_host_config):
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "stopped",
     }
@@ -247,7 +257,7 @@ def test_start_exits_1_when_docker_unreachable(mocker, mock_workspaces):
 
 
 def test_start_migrates_old_workspace_without_state_dir(
-    tmp_path, mock_docker, mock_workspaces, mock_container
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config,
 ):
     """When no state dir exists, start() recreates the container with new mounts."""
     state_path = tmp_path / "my-ws-state"
@@ -274,14 +284,14 @@ def test_start_migrates_old_workspace_without_state_dir(
 
 # --- stop ---
 
-def test_stop_unknown_workspace_exits_1(mock_workspaces):
+def test_stop_unknown_workspace_exits_1(mock_workspaces, mock_host_server, mock_host_config):
     mock_workspaces.get_workspace_by_name.return_value = None
     result = runner.invoke(app, ["stop", "nope"])
     assert result.exit_code == 1
     assert "Workspace 'nope' not found." in result.output
 
 
-def test_stop_already_stopped_workspace(mock_docker, mock_workspaces):
+def test_stop_already_stopped_workspace(mock_docker, mock_workspaces, mock_host_server, mock_host_config):
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "stopped",
     }
@@ -290,7 +300,7 @@ def test_stop_already_stopped_workspace(mock_docker, mock_workspaces):
     assert "already stopped" in result.output
 
 
-def test_stop_running_workspace(mock_docker, mock_workspaces, mock_container):
+def test_stop_running_workspace(mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config):
     mock_workspaces.get_workspace_by_name.return_value = {
         "name": "my-game", "container_id": "c1", "status": "running",
     }

@@ -106,8 +106,12 @@ def new(
             host_claude_json.read_text() if host_claude_json.exists() else "{}"
         )
 
-    bridge = host_config.load_host_bridge()
-    host_config.write_shims(bridge["operations"])
+    try:
+        bridge = host_config.load_host_bridge()
+        host_config.write_shims(bridge["operations"])
+    except Exception as e:
+        typer.echo(f"Failed to load host bridge config: {e}")
+        raise typer.Exit(1)
 
     try:
         container_id = container.create_container(
@@ -180,8 +184,12 @@ def start(name: str) -> None:
         workspaces.update_workspace(name, container_id=new_id)
         workspace = workspaces.get_workspace_by_name(name)
 
-    bridge = host_config.load_host_bridge()
-    host_config.write_shims(bridge["operations"])
+    try:
+        bridge = host_config.load_host_bridge()
+        host_config.write_shims(bridge["operations"])
+    except Exception as e:
+        typer.echo(f"Failed to load host bridge config: {e}")
+        raise typer.Exit(1)
     _start_bridge(bridge["port"])
     workspaces.update_workspace(name, status="running")
     try:
