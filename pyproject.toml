@@ -20,7 +20,7 @@ dev = ["pytest>=8.0", "pytest-mock>=3.0"]
 include = ["claudespaces*"]
 
 [tool.setuptools.package-data]
-claudespaces = ["Dockerfile.base", "support/bin/entrypoint.sh"]
+claudespaces = ["Dockerfile.base", "support/bin/entrypoint.sh", "support/bin/claudespaces-host"]
 
 [project.scripts]
 claudespaces = "claudespaces.cli:app"
