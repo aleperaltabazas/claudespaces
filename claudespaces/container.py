@@ -5,7 +5,10 @@ from pathlib import Path
 import docker
 from docker.types import Mount
 
+from claudespaces.host_config import DEFAULT_PORT, SHIMS_PATH
+
 CONTAINER_USER = "root"
+_CLAUDESPACES_HOST_SRC = Path(__file__).parent / "support" / "bin" / "claudespaces-host"
 
 
 def get_running_container_ids(docker_client) -> set[str]:
@@ -13,7 +16,7 @@ def get_running_container_ids(docker_client) -> set[str]:
     return {c.id for c in containers}
 
 
-def create_container(docker_client, image: str, dirs: list[str], state_dir: Path) -> str:
+def create_container(docker_client, image: str, dirs: list[str], state_dir: Path, host_port: int = DEFAULT_PORT) -> str:
     basenames = [os.path.basename(d) for d in dirs]
     if len(basenames) != len(set(basenames)):
         dup = next(b for b in basenames if basenames.count(b) > 1)
@@ -70,6 +73,22 @@ def create_container(docker_client, image: str, dirs: list[str], state_dir: Path
                 read_only=True,
             ))
 
+    if SHIMS_PATH.exists():
+        mounts.append(Mount(
+            target="/claudespaces/shims.json",
+            source=str(SHIMS_PATH),
+            type="bind",
+            read_only=True,
+        ))
+
+    if _CLAUDESPACES_HOST_SRC.exists():
+        mounts.append(Mount(
+            target="/claudespaces/bin/claudespaces-host",
+            source=str(_CLAUDESPACES_HOST_SRC),
+            type="bind",
+            read_only=True,
+        ))
+
     container = docker_client.containers.create(
         image=image,
         tty=True,
@@ -77,7 +96,11 @@ def create_container(docker_client, image: str, dirs: list[str], state_dir: Path
         user=CONTAINER_USER,
         working_dir="/workspace",
         mounts=mounts,
-        environment={"IS_SANDBOX": "1", "HOST_HOME": str(Path.home())},
+        environment={
+            "IS_SANDBOX": "1",
+            "HOST_HOME": str(Path.home()),
+            "CLAUDESPACES_HOST_PORT": str(host_port),
+        },
     )
     return container.id
 

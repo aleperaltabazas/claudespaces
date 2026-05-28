@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 import docker
 from docker.types import Mount
+import claudespaces.container as container
 from claudespaces.container import (
     create_container,
     get_running_container_ids,
@@ -234,3 +235,64 @@ def test_create_sets_host_home_env(client, tmp_path, state_dir, monkeypatch):
 
     kwargs = client.containers.create.call_args.kwargs
     assert kwargs["environment"]["HOST_HOME"] == str(fake_home)
+
+
+def test_create_container_mounts_shims_when_file_exists(tmp_path, mocker):
+    mock_client = MagicMock()
+    mock_client.containers.create.return_value = MagicMock(id="abc")
+
+    shims_path = tmp_path / "shims.json"
+    shims_path.write_text('{"notify-send": "notify"}')
+    mocker.patch("claudespaces.container.SHIMS_PATH", shims_path)
+
+    host_script = tmp_path / "claudespaces-host"
+    host_script.write_text("#!/usr/bin/env python3")
+    mocker.patch("claudespaces.container._CLAUDESPACES_HOST_SRC", host_script)
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "projects").mkdir()
+    (state_dir / "claude.json").write_text("{}")
+
+    container.create_container(mock_client, "myimage", [str(tmp_path)], state_dir)
+
+    mounts = mock_client.containers.create.call_args.kwargs["mounts"]
+    targets = [m["Target"] for m in mounts]
+    assert "/claudespaces/shims.json" in targets
+
+
+def test_create_container_skips_shims_when_file_absent(tmp_path, mocker):
+    mock_client = MagicMock()
+    mock_client.containers.create.return_value = MagicMock(id="abc")
+
+    mocker.patch("claudespaces.container.SHIMS_PATH", tmp_path / "nonexistent.json")
+    mocker.patch("claudespaces.container._CLAUDESPACES_HOST_SRC", tmp_path / "nonexistent")
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "projects").mkdir()
+    (state_dir / "claude.json").write_text("{}")
+
+    container.create_container(mock_client, "myimage", [str(tmp_path)], state_dir)
+
+    mounts = mock_client.containers.create.call_args.kwargs["mounts"]
+    targets = [m["Target"] for m in mounts]
+    assert "/claudespaces/shims.json" not in targets
+
+
+def test_create_container_injects_host_port_env(tmp_path, mocker):
+    mock_client = MagicMock()
+    mock_client.containers.create.return_value = MagicMock(id="abc")
+
+    mocker.patch("claudespaces.container.SHIMS_PATH", tmp_path / "nope.json")
+    mocker.patch("claudespaces.container._CLAUDESPACES_HOST_SRC", tmp_path / "nope")
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "projects").mkdir()
+    (state_dir / "claude.json").write_text("{}")
+
+    container.create_container(mock_client, "myimage", [str(tmp_path)], state_dir, host_port=9999)
+
+    env = mock_client.containers.create.call_args.kwargs["environment"]
+    assert env["CLAUDESPACES_HOST_PORT"] == "9999"
