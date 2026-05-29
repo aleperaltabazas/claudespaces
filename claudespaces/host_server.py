@@ -71,7 +71,7 @@ def _make_handler(operations: dict):
 
 
 def run_server(port: int, operations: dict) -> None:
-    server = HTTPServer(("127.0.0.1", port), _make_handler(operations))
+    server = HTTPServer(("0.0.0.0", port), _make_handler(operations))
     server.serve_forever()
 
 
