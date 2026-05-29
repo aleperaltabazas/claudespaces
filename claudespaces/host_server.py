@@ -27,23 +27,29 @@ def handle_run(op_name: str, args, operations: dict) -> tuple[int, dict]:
     else:
         named = args
 
-    cmd = [part.format_map(named) for part in cmd_parts]
+    try:
+        cmd = [part.format_map(named) for part in cmd_parts]
+    except KeyError as e:
+        return 400, {"error": f"missing argument: {e}"}
 
-    if op.get("async", False):
-        subprocess.Popen(
-            cmd,
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return 200, {"status": "ok"}
+    try:
+        if op.get("async", False):
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return 200, {"status": "ok"}
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return 200, {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.returncode,
-    }
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return 200, {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.returncode,
+        }
+    except FileNotFoundError:
+        return 500, {"error": f"command not found: {cmd[0]!r}"}
 
 
 def _make_handler(operations: dict):
@@ -55,11 +61,14 @@ def _make_handler(operations: dict):
             if self.path != "/run":
                 self.send_error(404)
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length))
-            code, response = handle_run(
-                body.get("op", ""), body.get("args", {}), operations
-            )
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length))
+                code, response = handle_run(
+                    body.get("op", ""), body.get("args", {}), operations
+                )
+            except Exception as e:
+                code, response = 500, {"error": str(e)}
             payload = json.dumps(response).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json")

@@ -48,8 +48,8 @@ def main():
         body = json.loads(e.read())
         print(f"Error: {body.get('error', 'unknown error')}", file=sys.stderr)
         sys.exit(1)
-    except OSError:
-        print("host bridge is not running", file=sys.stderr)
+    except OSError as e:
+        print(f"host bridge is not running: {e}", file=sys.stderr)
         sys.exit(1)
 
     if "status" in body:
