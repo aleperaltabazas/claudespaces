@@ -1,3 +1,16 @@
 # Session memory
 
-Given that projects get loaded to /workspace in the container and that ~/.claude/sessions is mounted, all sessions will be saved and be globally visible. It'd be preferrable that each workspace created gets their own, separate session so the user can create as many coding sessions as desired. We'll probably need to unmount the claude session dir and keep track of sessions specifically for claudespaces.
+Give each workspace its own isolated Claude session history instead of sharing a global `~/.claude/sessions`.
+
+## Storage
+
+Per-workspace sessions live on the host at `~/.claudespaces/<name>/session/`. This directory is created alongside the other per-workspace state dirs (`claude.json`, `projects/`) when the workspace is first created.
+
+## Mount strategy
+
+Same approach as `settings.json` / `.credentials.json`: mount the host dir to a staging path (e.g. `/claudespaces/host/session`) read-write, then let `entrypoint.sh` symlink or copy it into place at `~/.claude/sessions` before Claude starts. This avoids the container's Claude install overwriting a direct mount.
+
+## Scope
+
+- Clean slate: existing workspaces do not need migration.
+- No CLI commands for browsing or exporting sessions — isolation only. Users can manually access `~/.claudespaces/<name>/session/` on the host if needed.
