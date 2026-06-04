@@ -23,6 +23,21 @@ pip install -e ".[dev]"
 .venv/bin/claudespaces --help
 ```
 
+## Task Management
+
+This project tracks work with the `backlog` CLI. Never move task files manually with `mv` or git — always use the CLI.
+
+### Task workflow
+
+When starting any piece of work:
+
+1. **Find or create a task** — search the backlog column for a matching task.
+   - Clear match: pick it.
+   - Uncertain match: ask the user to confirm before proceeding.
+   - No match: create a new task with `backlog create`.
+2. **Move to WIP** when you begin work: `backlog move <slug> --to wip`.
+3. **Move to done** when the work is complete: `backlog move <slug> --to done`.
+
 ## Architecture
 
 Seven focused modules with `cli.py` as the only integration point:
