@@ -121,6 +121,10 @@ def test_parse_mount_invalid():
     with pytest.raises(ValueError, match="invalid mount"):
         _parse_mount("/only-one-part")
 
+def test_parse_mount_invalid_mode():
+    with pytest.raises(ValueError, match="invalid mount mode"):
+        _parse_mount("/host/path:/container/path:rw2")
+
 def test_additional_mounts_local_only(tmp_path):
     cfg_file = tmp_path / "claudespaces.yml"
     cfg_file.write_text("additional-mounts:\n  - /src:/dst:ro\n")
