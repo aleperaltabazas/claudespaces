@@ -177,15 +177,15 @@ def start(name: str) -> None:
         typer.echo(f"Failed to load host bridge config: {e}")
         raise typer.Exit(1)
 
-    try:
-        cfg = config.load_config()
-    except ValueError as e:
-        typer.echo(str(e))
-        raise typer.Exit(1)
-    additional_mounts = cfg.get("additional_mounts", [])
-
     sd = workspaces.state_dir(name)
     if not sd.exists():
+        try:
+            cfg = config.load_config()
+        except ValueError as e:
+            typer.echo(str(e))
+            raise typer.Exit(1)
+        additional_mounts = cfg.get("additional_mounts", [])
+
         typer.echo(f"Migrating workspace '{name}' to new mount layout...")
         sd.mkdir(parents=True, exist_ok=True)
         (sd / "projects").mkdir(exist_ok=True)

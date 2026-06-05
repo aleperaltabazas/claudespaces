@@ -299,6 +299,32 @@ def test_start_migrates_old_workspace_without_state_dir(
     )
 
 
+def test_start_passes_additional_mounts_on_auto_heal(
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config, mocker,
+):
+    """When auto-healing, start() passes additional_mounts from config to create_container."""
+    extra_mounts = [{"source": "/s", "target": "/t", "read_only": False}]
+    mock_config = mocker.patch("claudespaces.cli.config")
+    mock_config.load_config.return_value = {"additional_mounts": extra_mounts}
+
+    state_path = tmp_path / "my-ws-state"
+    mock_workspaces.state_dir.return_value = state_path
+    mock_workspaces.get_workspace_by_name.return_value = {
+        "name": "my-ws",
+        "container_id": "old-container",
+        "status": "stopped",
+        "image": "claudespaces-base:ubuntu-24.04",
+        "dirs": ["/home/user/workspace"],
+    }
+    mock_container.create_container.return_value = "new-container"
+
+    result = runner.invoke(app, ["start", "my-ws"])
+
+    assert result.exit_code == 0
+    _, kwargs = mock_container.create_container.call_args
+    assert kwargs.get("additional_mounts") == extra_mounts
+
+
 # --- stop ---
 
 def test_stop_unknown_workspace_exits_1(mock_workspaces, mock_host_server, mock_host_config):
