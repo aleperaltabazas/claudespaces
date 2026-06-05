@@ -113,9 +113,12 @@ def new(
         typer.echo(f"Failed to load host bridge config: {e}")
         raise typer.Exit(1)
 
+    additional_mounts = cfg.get("additional_mounts", [])
+
     try:
         container_id = container.create_container(
-            docker_client, resolved_image, resolved_dirs, state_dir=sd, host_port=bridge["port"]
+            docker_client, resolved_image, resolved_dirs, state_dir=sd, host_port=bridge["port"],
+            additional_mounts=additional_mounts
         )
     except ValueError as e:
         typer.echo(str(e))
@@ -174,6 +177,13 @@ def start(name: str) -> None:
         typer.echo(f"Failed to load host bridge config: {e}")
         raise typer.Exit(1)
 
+    try:
+        cfg = config.load_config()
+    except ValueError as e:
+        typer.echo(str(e))
+        raise typer.Exit(1)
+    additional_mounts = cfg.get("additional_mounts", [])
+
     sd = workspaces.state_dir(name)
     if not sd.exists():
         typer.echo(f"Migrating workspace '{name}' to new mount layout...")
@@ -187,7 +197,7 @@ def start(name: str) -> None:
         container.remove_container(docker_client, workspace["container_id"])
         new_id = container.create_container(
             docker_client, workspace["image"], workspace["dirs"], state_dir=sd,
-            host_port=bridge["port"]
+            host_port=bridge["port"], additional_mounts=additional_mounts
         )
         workspaces.update_workspace(name, container_id=new_id)
         workspace = workspaces.get_workspace_by_name(name)

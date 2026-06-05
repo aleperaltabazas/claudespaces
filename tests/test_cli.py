@@ -194,6 +194,23 @@ def test_new_creates_projects_dir(
     assert (state / "projects").is_dir()
 
 
+def test_new_passes_additional_mounts_to_container(
+    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image,
+    mock_host_server, mock_host_config, mocker,
+):
+    extra_mounts = [{"source": "/h/docs", "target": "/docs", "read_only": True}]
+    mock_config = mocker.patch("claudespaces.cli.config")
+    mock_config.load_config.return_value = {"additional_mounts": extra_mounts}
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    result = runner.invoke(app, ["new", str(proj)])
+
+    assert result.exit_code == 0
+    _, kwargs = mock_container.create_container.call_args
+    assert kwargs.get("additional_mounts") == extra_mounts
+
+
 # --- start ---
 
 def test_start_attaches_to_workspace(mock_docker, mock_workspaces, mock_container, mock_host_server, mock_host_config):
