@@ -16,7 +16,7 @@ def get_running_container_ids(docker_client) -> set[str]:
     return {c.id for c in containers}
 
 
-def create_container(docker_client, image: str, dirs: list[str], state_dir: Path, host_port: int = DEFAULT_PORT) -> str:
+def create_container(docker_client, image: str, dirs: list[str], state_dir: Path, host_port: int = DEFAULT_PORT, additional_mounts: list[dict] | None = None) -> str:
     basenames = [os.path.basename(d) for d in dirs]
     if len(basenames) != len(set(basenames)):
         dup = next(b for b in basenames if basenames.count(b) > 1)
@@ -87,6 +87,14 @@ def create_container(docker_client, image: str, dirs: list[str], state_dir: Path
             source=str(_CLAUDESPACES_HOST_SRC),
             type="bind",
             read_only=True,
+        ))
+
+    for m in (additional_mounts or []):
+        mounts.append(Mount(
+            target=m["target"],
+            source=m["source"],
+            type="bind",
+            read_only=m["read_only"],
         ))
 
     container = docker_client.containers.create(

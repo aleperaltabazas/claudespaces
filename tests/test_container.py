@@ -314,3 +314,30 @@ def test_create_container_adds_host_gateway(tmp_path, mocker):
 
     extra_hosts = mock_client.containers.create.call_args.kwargs["extra_hosts"]
     assert extra_hosts == {"host.docker.internal": "host-gateway"}
+
+
+def test_additional_mounts_appended(tmp_path):
+    client = MagicMock()
+    client.containers.create.return_value = MagicMock(id="abc123")
+    extra = [
+        {"source": "/host/docs", "target": "/docs", "read_only": True},
+        {"source": "/host/scripts", "target": "/scripts", "read_only": False},
+    ]
+    create_container(client, "some-image", [], state_dir=tmp_path, additional_mounts=extra)
+    kwargs = client.containers.create.call_args.kwargs
+    mounts = kwargs["mounts"]
+    docs = next(m for m in mounts if m["Target"] == "/docs")
+    assert docs["Source"] == "/host/docs"
+    assert docs["ReadOnly"] is True
+    scripts = next(m for m in mounts if m["Target"] == "/scripts")
+    assert scripts["Source"] == "/host/scripts"
+    assert scripts["ReadOnly"] is False
+
+
+def test_no_additional_mounts_default(tmp_path):
+    client = MagicMock()
+    client.containers.create.return_value = MagicMock(id="abc123")
+    create_container(client, "some-image", [], state_dir=tmp_path)
+    kwargs = client.containers.create.call_args.kwargs
+    targets = [m["Target"] for m in kwargs["mounts"]]
+    assert "/docs" not in targets
