@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 from claudespaces import config
-from claudespaces.config import load_config
+from claudespaces.config import load_config, _parse_mount
 
 
 @pytest.fixture(autouse=True)
@@ -101,3 +101,60 @@ def test_directories_merged_from_global_and_local(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "GLOBAL_CONFIG_PATH", global_cfg)
     (tmp_path / "claudespaces.yml").write_text("directories:\n  - ~/local-proj\n")
     assert load_config(str(tmp_path))["directories"] == ["~/global-proj", "~/local-proj"]
+
+
+# --- additional-mounts ---
+
+def test_parse_mount_src_dst():
+    m = _parse_mount("/host/path:/container/path")
+    assert m == {"source": "/host/path", "target": "/container/path", "read_only": False}
+
+def test_parse_mount_src_dst_rw():
+    m = _parse_mount("/host/path:/container/path:rw")
+    assert m == {"source": "/host/path", "target": "/container/path", "read_only": False}
+
+def test_parse_mount_src_dst_ro():
+    m = _parse_mount("/host/path:/container/path:ro")
+    assert m == {"source": "/host/path", "target": "/container/path", "read_only": True}
+
+def test_parse_mount_invalid():
+    with pytest.raises(ValueError, match="invalid mount"):
+        _parse_mount("/only-one-part")
+
+def test_additional_mounts_local_only(tmp_path):
+    cfg_file = tmp_path / "claudespaces.yml"
+    cfg_file.write_text("additional-mounts:\n  - /src:/dst:ro\n")
+    result = load_config(cwd=str(tmp_path))
+    assert result["additional_mounts"] == [{"source": "/src", "target": "/dst", "read_only": True}]
+
+def test_additional_mounts_global_only(tmp_path, monkeypatch):
+    global_cfg = tmp_path / "global.yaml"
+    global_cfg.write_text("additional-mounts:\n  - /g:/cg:rw\n")
+    monkeypatch.setattr("claudespaces.config.GLOBAL_CONFIG_PATH", global_cfg)
+    result = load_config(cwd=str(tmp_path))
+    assert result["additional_mounts"] == [{"source": "/g", "target": "/cg", "read_only": False}]
+
+def test_additional_mounts_merged(tmp_path, monkeypatch):
+    global_cfg = tmp_path / "global.yaml"
+    global_cfg.write_text("additional-mounts:\n  - /g:/cg\n")
+    monkeypatch.setattr("claudespaces.config.GLOBAL_CONFIG_PATH", global_cfg)
+    local_cfg = tmp_path / "claudespaces.yml"
+    local_cfg.write_text("additional-mounts:\n  - /l:/cl:ro\n")
+    result = load_config(cwd=str(tmp_path))
+    assert result["additional_mounts"] == [
+        {"source": "/g", "target": "/cg", "read_only": False},
+        {"source": "/l", "target": "/cl", "read_only": True},
+    ]
+
+def test_additional_mounts_collision_raises(tmp_path, monkeypatch):
+    global_cfg = tmp_path / "global.yaml"
+    global_cfg.write_text("additional-mounts:\n  - /g:/shared\n")
+    monkeypatch.setattr("claudespaces.config.GLOBAL_CONFIG_PATH", global_cfg)
+    local_cfg = tmp_path / "claudespaces.yml"
+    local_cfg.write_text("additional-mounts:\n  - /l:/shared\n")
+    with pytest.raises(ValueError, match="/shared"):
+        load_config(cwd=str(tmp_path))
+
+def test_no_additional_mounts_key_absent(tmp_path):
+    result = load_config(cwd=str(tmp_path))
+    assert "additional_mounts" not in result
