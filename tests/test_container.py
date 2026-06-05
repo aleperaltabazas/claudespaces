@@ -134,6 +134,18 @@ def test_create_mounts_state_projects_rw(client, tmp_path, state_dir):
     assert mount["ReadOnly"] is False
 
 
+def test_create_mounts_state_session_rw(client, tmp_path, state_dir):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+
+    create_container(client, "image", [str(proj)], state_dir)
+
+    kwargs = client.containers.create.call_args.kwargs
+    mount = next(m for m in kwargs["mounts"] if m["Target"] == "/claudespaces/host/session")
+    assert mount["Source"] == str(state_dir / "session")
+    assert mount["ReadOnly"] is False
+
+
 def test_create_mounts_settings_json_when_present(client, tmp_path, state_dir, monkeypatch):
     proj = tmp_path / "proj"
     proj.mkdir()

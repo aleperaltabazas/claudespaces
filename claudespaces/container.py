@@ -45,6 +45,12 @@ def create_container(docker_client, image: str, dirs: list[str], state_dir: Path
         type="bind",
         read_only=False,
     ))
+    mounts.append(Mount(
+        target="/claudespaces/host/session",
+        source=str(state_dir / "session"),
+        type="bind",
+        read_only=False,
+    ))
 
     # Bind-mount the entrypoint from the installed package so it's always current,
     # regardless of which image version is cached.

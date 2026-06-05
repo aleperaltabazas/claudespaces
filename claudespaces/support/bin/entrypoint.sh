@@ -3,6 +3,10 @@ set -e
 
 mkdir -p ~/.claude
 
+if [ -d /claudespaces/host/session ]; then
+    ln -sfn /claudespaces/host/session ~/.claude/sessions
+fi
+
 if [ -f /claudespaces/host/settings.json ]; then
     cp /claudespaces/host/settings.json ~/.claude/settings.json
 fi
