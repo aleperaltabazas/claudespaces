@@ -355,6 +355,26 @@ def test_remove_deletes_state_dir(tmp_path, mock_docker, mock_workspaces, mock_c
     assert not state.exists()
 
 
+# --- rm (alias for remove) ---
+
+def test_rm_unknown_workspace_exits_1(mock_workspaces):
+    mock_workspaces.get_workspace_by_name.return_value = None
+    result = runner.invoke(app, ["rm", "nope"])
+    assert result.exit_code == 1
+    assert "Workspace 'nope' not found." in result.output
+
+
+def test_rm_removes_workspace(mock_docker, mock_workspaces, mock_container):
+    mock_workspaces.get_workspace_by_name.return_value = {
+        "name": "my-game", "container_id": "c1", "status": "stopped",
+    }
+    result = runner.invoke(app, ["rm", "my-game"])
+    assert result.exit_code == 0
+    mock_container.remove_container.assert_called_once()
+    mock_workspaces.remove_workspace.assert_called_once_with("my-game")
+    assert "Removed workspace 'my-game'" in result.output
+
+
 # --- list ---
 
 def test_list_no_workspaces(mock_workspaces):
@@ -375,6 +395,31 @@ def test_list_with_workspaces(mock_workspaces):
         "image": "claudespaces-base:ubuntu-24.04",
     }]
     result = runner.invoke(app, ["list"])
+    assert result.exit_code == 0
+    assert "bold-space" in result.output
+    assert "stopped" in result.output
+
+
+# --- ls (alias for list) ---
+
+def test_ls_no_workspaces(mock_workspaces):
+    mock_workspaces.all_workspaces.return_value = []
+    result = runner.invoke(app, ["ls"])
+    assert result.exit_code == 0
+    assert "No workspaces found." in result.output
+
+
+def test_ls_with_workspaces(mock_workspaces):
+    mock_workspaces.all_workspaces.return_value = [{
+        "name": "bold-space",
+        "dirs": ["/home/user/proj1"],
+        "container_id": "c1",
+        "status": "stopped",
+        "last_used_at": "2026-05-26T14:32:00Z",
+        "created_at": "2026-05-26T10:00:00Z",
+        "image": "claudespaces-base:ubuntu-24.04",
+    }]
+    result = runner.invoke(app, ["ls"])
     assert result.exit_code == 0
     assert "bold-space" in result.output
     assert "stopped" in result.output

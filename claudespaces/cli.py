@@ -231,6 +231,11 @@ def stop(name: str) -> None:
     typer.echo(f"Stopped workspace '{name}'.")
 
 
+@app.command(name="rm")
+def rm(name: str) -> None:
+    remove(name)
+
+
 @app.command()
 def remove(name: str) -> None:
     workspace = workspaces.get_workspace_by_name(name)
@@ -254,6 +259,11 @@ def remove(name: str) -> None:
     if sd.exists():
         shutil.rmtree(sd)
     typer.echo(f"Removed workspace '{name}'.")
+
+
+@app.command(name="ls")
+def ls() -> None:
+    list()
 
 
 @app.command()
