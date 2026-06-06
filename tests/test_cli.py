@@ -194,20 +194,6 @@ def test_new_creates_projects_dir(
     assert (state / "projects").is_dir()
 
 
-def test_new_creates_session_dir(
-    tmp_path, mock_docker, mock_workspaces, mock_container, mock_image, mock_config,
-    mock_host_server, mock_host_config,
-):
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    state = tmp_path / "state" / "bold-space"
-    mock_workspaces.state_dir.return_value = state
-    result = runner.invoke(app, ["new", str(proj)])
-    assert result.exit_code == 0
-    assert (state / "session").exists()
-    assert (state / "session").is_dir()
-
-
 def test_new_passes_additional_mounts_to_container(
     tmp_path, mock_docker, mock_workspaces, mock_container, mock_image,
     mock_host_server, mock_host_config, mocker,

@@ -99,7 +99,6 @@ def new(
     sd = workspaces.state_dir(name)
     sd.mkdir(parents=True, exist_ok=True)
     (sd / "projects").mkdir(exist_ok=True)
-    (sd / "session").mkdir(exist_ok=True)
     claude_json = sd / "claude.json"
     if not claude_json.exists():
         host_claude_json = Path.home() / ".claude.json"
@@ -190,7 +189,6 @@ def start(name: str) -> None:
         typer.echo(f"Migrating workspace '{name}' to new mount layout...")
         sd.mkdir(parents=True, exist_ok=True)
         (sd / "projects").mkdir(exist_ok=True)
-        (sd / "session").mkdir(exist_ok=True)
         claude_json = sd / "claude.json"
         host_claude_json = Path.home() / ".claude.json"
         claude_json.write_text(
