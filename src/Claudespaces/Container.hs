@@ -4,6 +4,8 @@ module Claudespaces.Container
   ( MountSpec (..)
   , checkBasenameCollision
   , buildMounts
+  , hostClaudePaths
+  , resolveHostMounts
   , buildEnv
   , mountSpecToArgs
   , createContainer
@@ -14,6 +16,7 @@ module Claudespaces.Container
   ) where
 
 import           Control.Exception      (throwIO)
+import           System.Directory       (doesFileExist, doesDirectoryExist)
 import           Data.List              (group, sort)
 import qualified Data.Set               as Set
 import           Data.Set               (Set)
@@ -59,8 +62,8 @@ checkBasenameCollision dirs = do
       "Basename collision: multiple directories share the basename '" <> d <> "'"
 
 buildMounts :: [FilePath] -> FilePath -> Int -> [MountEntry] -> FilePath -> [MountSpec]
-buildMounts dirs stateDir _hostPort additionalMounts _homePath =
-  userMounts ++ stateMounts ++ extraMounts
+buildMounts dirs stateDir _hostPort additionalMounts homePath =
+  userMounts ++ stateMounts ++ hostMounts ++ extraMounts
   where
     userMounts =
       [ MountSpec
@@ -84,6 +87,14 @@ buildMounts dirs stateDir _hostPort additionalMounts _homePath =
           }
       ]
 
+    hostMounts =
+      [ MountSpec
+          { mSource   = T.pack (homePath </> ".claudespaces" </> "shims.json")
+          , mTarget   = "/claudespaces/shims.json"
+          , mReadOnly = True
+          }
+      ]
+
     extraMounts =
       [ MountSpec
           { mSource   = mountSource m
@@ -92,6 +103,26 @@ buildMounts dirs stateDir _hostPort additionalMounts _homePath =
           }
       | m <- additionalMounts
       ]
+
+-- | Host paths to mount read-only into the container if they exist on the host.
+hostClaudePaths :: FilePath -> [(FilePath, String)]
+hostClaudePaths homePath =
+  [ (homePath </> ".claude" </> "settings.json", "/claudespaces/host/settings.json")
+  , (homePath </> ".claude" </> "plugins",       "/claudespaces/host/plugins")
+  , (homePath </> ".claude" </> "credentials.json", "/claudespaces/host/credentials.json")
+  ]
+
+resolveHostMounts :: FilePath -> IO [MountSpec]
+resolveHostMounts homePath = do
+  let paths = hostClaudePaths homePath
+  fmap concat $ mapM checkAndMount paths
+  where
+    checkAndMount (src, tgt) = do
+      fileExists <- doesFileExist src
+      dirExists  <- doesDirectoryExist src
+      if fileExists || dirExists
+        then return [MountSpec (T.pack src) (T.pack tgt) True]
+        else return []
 
 buildEnv :: Int -> FilePath -> [(String, String)]
 buildEnv hostPort homePath =
@@ -148,7 +179,7 @@ attachContainer containerId = do
 
 getRunningContainerIds :: IO (Set Text)
 getRunningContainerIds = do
-  out <- readProcess "docker" ["ps", "-q", "--filter", "status=running"] ""
+  out <- readProcess "docker" ["ps", "-q", "--no-trunc", "--filter", "status=running"] ""
   let ids = filter (not . T.null) . map T.strip . T.lines . T.pack $ out
   return $ Set.fromList ids
 

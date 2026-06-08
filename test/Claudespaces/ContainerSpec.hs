@@ -51,6 +51,13 @@ spec = do
       mTarget projectsMount `shouldBe` "/root/.claude/projects"
       mReadOnly projectsMount `shouldBe` False
 
+    it "mounts shims.json read-only" $ do
+      let mounts = buildMounts [] stateDir hostPort noExtra homePath
+      let shimsMount = mounts !! 2
+      mSource shimsMount `shouldBe` "/home/user/.claudespaces/shims.json"
+      mTarget shimsMount `shouldBe` "/claudespaces/shims.json"
+      mReadOnly shimsMount `shouldBe` True
+
     it "appends additional mounts" $ do
       let extra = [MountEntry "/host/docs" "/docs" True]
       let mounts = buildMounts [] stateDir hostPort extra homePath

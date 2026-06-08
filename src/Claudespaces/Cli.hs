@@ -224,8 +224,9 @@ cmdNew opts = do
 
   -- Build mounts and create container
   let mounts  = Container.buildMounts resolvedDirs wsd port (Config.cfgAdditionalMounts cfg) home
+  hostMounts <- Container.resolveHostMounts home
   let envVars = Container.buildEnv port home
-  cid <- Container.createContainer image mounts envVars
+  cid <- Container.createContainer image (mounts ++ hostMounts) envVars
 
   -- Save workspace
   now <- nowUtc
@@ -322,8 +323,9 @@ cmdStart name = do
       cfg    <- Config.loadConfig "." globalConfigPath
       let dirs = map T.unpack (Workspaces.wsDirs ws2)
       let mounts  = Container.buildMounts dirs wsd port (Config.cfgAdditionalMounts cfg) home
+      hostMounts' <- Container.resolveHostMounts home
       let envVars = Container.buildEnv port home
-      newCid <- Container.createContainer (Workspaces.wsImage ws2) mounts envVars
+      newCid <- Container.createContainer (Workspaces.wsImage ws2) (mounts ++ hostMounts') envVars
       Workspaces.updateWorkspace sf name (\w -> w { Workspaces.wsContainerId = newCid })
       return newCid
 
@@ -382,8 +384,10 @@ cmdRemove name = do
       exitFailure
     Just w  -> return w
 
+  let wasRunning = Workspaces.wsStatus ws == "running"
   Container.removeContainer (Workspaces.wsContainerId ws)
   Workspaces.removeWorkspace sf name
+  if wasRunning then HostServer.stopServerIfLast name sf else return ()
   -- Remove state dir
   let wsd = Workspaces.stateDir sf name
   removeDir wsd
