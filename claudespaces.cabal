@@ -17,6 +17,7 @@ source-repository head
 library
   exposed-modules:
       Claudespaces.Cli
+      Claudespaces.Config
   other-modules:
       Paths_claudespaces
   hs-source-dirs:
@@ -25,6 +26,7 @@ library
       aeson
     , base >=4.7 && <5
     , bytestring
+    , containers
     , cryptohash-md5
     , directory
     , file-embed
@@ -53,6 +55,7 @@ executable claudespaces
     , base >=4.7 && <5
     , bytestring
     , claudespaces
+    , containers
     , cryptohash-md5
     , directory
     , file-embed
@@ -73,6 +76,7 @@ test-suite claudespaces-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Claudespaces.ConfigSpec
       Paths_claudespaces
   hs-source-dirs:
       test
@@ -84,6 +88,7 @@ test-suite claudespaces-test
     , base >=4.7 && <5
     , bytestring
     , claudespaces
+    , containers
     , cryptohash-md5
     , directory
     , file-embed

@@ -5,6 +5,7 @@ github: aleperaltabazas/claudespaces
 dependencies:
   - base >= 4.7 && < 5
   - aeson
+  - containers
   - bytestring
   - cryptohash-md5
   - directory
