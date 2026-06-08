@@ -11,6 +11,7 @@ dependencies:
   - directory
   - file-embed
   - filepath
+  - http-types
   - network
   - optparse-applicative
   - process
@@ -18,6 +19,7 @@ dependencies:
   - scotty
   - text
   - text-conversions
+  - vector
   - time
   - unix
   - yaml
@@ -40,6 +42,7 @@ library:
     - Claudespaces.Config
     - Claudespaces.Container
     - Claudespaces.HostConfig
+    - Claudespaces.HostServer
     - Claudespaces.Image
     - Claudespaces.Workspaces
 
