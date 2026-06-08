@@ -1,0 +1,53 @@
+name: claudespaces
+version: 0.1.0
+github: aleperaltabazas/claudespaces
+
+dependencies:
+  - base >= 4.7 && < 5
+  - aeson
+  - bytestring
+  - cryptohash-md5
+  - directory
+  - file-embed
+  - filepath
+  - network
+  - optparse-applicative
+  - process
+  - random
+  - scotty
+  - text
+  - text-conversions
+  - time
+  - unix
+  - yaml
+
+executables:
+  claudespaces:
+    main: Main.hs
+    source-dirs: app
+    dependencies:
+      - claudespaces
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+
+library:
+  source-dirs: src
+
+tests:
+  claudespaces-test:
+    main: Spec.hs
+    source-dirs: test
+    dependencies:
+      - claudespaces
+      - hspec
+      - hedgehog
+      - hspec-hedgehog
+      - temporary
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    build-tools:
+      - hspec-discover

@@ -1,0 +1,105 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.37.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           claudespaces
+version:        0.1.0
+homepage:       https://github.com/aleperaltabazas/claudespaces#readme
+bug-reports:    https://github.com/aleperaltabazas/claudespaces/issues
+build-type:     Simple
+
+source-repository head
+  type: git
+  location: https://github.com/aleperaltabazas/claudespaces
+
+library
+  exposed-modules:
+      Claudespaces.Cli
+  other-modules:
+      Paths_claudespaces
+  hs-source-dirs:
+      src
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cryptohash-md5
+    , directory
+    , file-embed
+    , filepath
+    , network
+    , optparse-applicative
+    , process
+    , random
+    , scotty
+    , text
+    , text-conversions
+    , time
+    , unix
+    , yaml
+  default-language: Haskell2010
+
+executable claudespaces
+  main-is: Main.hs
+  other-modules:
+      Paths_claudespaces
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , claudespaces
+    , cryptohash-md5
+    , directory
+    , file-embed
+    , filepath
+    , network
+    , optparse-applicative
+    , process
+    , random
+    , scotty
+    , text
+    , text-conversions
+    , time
+    , unix
+    , yaml
+  default-language: Haskell2010
+
+test-suite claudespaces-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_claudespaces
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-tool-depends:
+      hspec-discover:hspec-discover
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , claudespaces
+    , cryptohash-md5
+    , directory
+    , file-embed
+    , filepath
+    , hedgehog
+    , hspec
+    , hspec-hedgehog
+    , network
+    , optparse-applicative
+    , process
+    , random
+    , scotty
+    , temporary
+    , text
+    , text-conversions
+    , time
+    , unix
+    , yaml
+  default-language: Haskell2010
