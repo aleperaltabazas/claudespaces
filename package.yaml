@@ -40,6 +40,7 @@ library:
     - Claudespaces.Config
     - Claudespaces.Container
     - Claudespaces.HostConfig
+    - Claudespaces.Image
     - Claudespaces.Workspaces
 
 tests:
