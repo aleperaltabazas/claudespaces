@@ -2,13 +2,12 @@
 
 module Claudespaces.ContainerSpec (spec) where
 
-import           Test.Hspec
-import           System.FilePath        ((</>))
-import           Data.List              (lookup)
-import           Prelude                hiding (lookup)
-
-import           Claudespaces.Config    (MountEntry (..))
-import           Claudespaces.Container
+import Claudespaces.Config (MountEntry (..))
+import Claudespaces.Container
+import Data.List (lookup)
+import System.FilePath ((</>))
+import Test.Hspec
+import Prelude hiding (lookup)
 
 spec :: Spec
 spec = do
@@ -25,7 +24,7 @@ spec = do
     let stateDir = "/state"
         homePath = "/home/user"
         hostPort = 7731
-        noExtra  = []
+        noExtra = []
 
     it "mounts user dir at /workspace/<basename>" $ do
       let mounts = buildMounts ["/home/user/myapp"] stateDir hostPort noExtra homePath
