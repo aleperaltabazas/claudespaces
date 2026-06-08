@@ -35,7 +35,7 @@ import           System.Process         ( createProcess
                                         , waitForProcess
                                         )
 
-import           Claudespaces.Config    (MountEntry (..))
+import           Claudespaces.Config    (Mount (..))
 
 -- ---------------------------------------------------------------------------
 -- Types
@@ -60,7 +60,7 @@ checkBasenameCollision dirs = do
     (d:_) -> throwIO $ userError $
       "Basename collision: multiple directories share the basename '" <> d <> "'"
 
-buildMounts :: [FilePath] -> FilePath -> Int -> [MountEntry] -> FilePath -> [MountSpec]
+buildMounts :: [FilePath] -> FilePath -> Int -> [Mount] -> FilePath -> [MountSpec]
 buildMounts dirs stateDir _hostPort additionalMounts homePath =
   userMounts ++ stateMounts ++ hostMounts ++ extraMounts
   where
@@ -96,9 +96,9 @@ buildMounts dirs stateDir _hostPort additionalMounts homePath =
 
     extraMounts =
       [ MountSpec
-          { mSource   = mountSource m
-          , mTarget   = mountTarget m
-          , mReadOnly = mountReadOnly m
+          { mSource   = m.source
+          , mTarget   = m.target
+          , mReadOnly = m.readOnly
           }
       | m <- additionalMounts
       ]

@@ -21,7 +21,7 @@ data AppError
   | InvalidMount Text
   | NameGenerationFailed
   | HomeNotSet
-  deriving (Show)
+  deriving (Show, Eq)
 
 instance Exception AppError
 

@@ -1,14 +1,13 @@
 
 module Claudespaces.Config
   ( Config (..)
-  , MountEntry (..)
+  , Mount (..)
   , emptyConfig
   , loadConfig
   , parseMount
   ) where
 
 import           Control.Exception  (throwIO)
-import           System.IO.Error    (userError)
 import           Data.Aeson         (FromJSON (..), withObject, (.:?))
 import           Data.List          (nub)
 import qualified Data.Set           as Set
@@ -19,31 +18,33 @@ import qualified Data.ByteString    as BS
 import           System.Directory   (doesFileExist)
 import           System.FilePath    ((</>))
 
+import           Claudespaces.Error (AppError (..))
+
 -- ---------------------------------------------------------------------------
 -- Public types
 -- ---------------------------------------------------------------------------
 
-data MountEntry = MountEntry
-  { mountSource   :: Text
-  , mountTarget   :: Text
-  , mountReadOnly :: Bool
+data Mount = Mount
+  { source   :: Text
+  , target   :: Text
+  , readOnly :: Bool
   } deriving (Eq, Show)
 
 data Config = Config
-  { cfgImage            :: Maybe Text
-  , cfgDockerfile       :: Maybe Text
-  , cfgGlobalDockerfile :: Maybe Text
-  , cfgDirectories      :: [Text]
-  , cfgAdditionalMounts :: [MountEntry]
+  { image            :: Maybe Text
+  , dockerfile       :: Maybe Text
+  , globalDockerfile :: Maybe Text
+  , directories      :: [Text]
+  , additionalMounts :: [Mount]
   } deriving (Eq, Show)
 
 emptyConfig :: Config
 emptyConfig = Config
-  { cfgImage            = Nothing
-  , cfgDockerfile       = Nothing
-  , cfgGlobalDockerfile = Nothing
-  , cfgDirectories      = []
-  , cfgAdditionalMounts = []
+  { image            = Nothing
+  , dockerfile       = Nothing
+  , globalDockerfile = Nothing
+  , directories      = []
+  , additionalMounts = []
   }
 
 -- ---------------------------------------------------------------------------
@@ -69,26 +70,29 @@ instance FromJSON RawConfig where
     return $ RawConfig
       { rawImage            = img
       , rawDockerfile       = df
-      , rawDirectories      = maybe [] id dirs
-      , rawAdditionalMounts = maybe [] id mounts
+      , rawDirectories      = fromMaybe [] dirs
+      , rawAdditionalMounts = fromMaybe [] mounts
       }
+    where
+      fromMaybe d Nothing  = d
+      fromMaybe _ (Just x) = x
 
 -- ---------------------------------------------------------------------------
 -- parseMount
 -- ---------------------------------------------------------------------------
 
-parseMount :: Text -> Either Text MountEntry
+parseMount :: Text -> Either AppError Mount
 parseMount raw =
   case T.splitOn ":" raw of
     [src, dst] ->
-      Right $ MountEntry src dst False
+      Right $ Mount src dst False
     [src, dst, mode] ->
       case mode of
-        "ro" -> Right $ MountEntry src dst True
-        "rw" -> Right $ MountEntry src dst False
-        _    -> Left $ "Invalid mount mode: " <> mode
+        "ro" -> Right $ Mount src dst True
+        "rw" -> Right $ Mount src dst False
+        _    -> Left $ InvalidMount $ "Invalid mount mode: " <> mode
     _ ->
-      Left $ "Invalid mount entry (expected src:dst or src:dst:ro|rw): " <> raw
+      Left $ InvalidMount $ "Invalid mount entry (expected src:dst or src:dst:ro|rw): " <> raw
 
 -- ---------------------------------------------------------------------------
 -- Internal helpers
@@ -105,33 +109,31 @@ loadYaml path = do
         then return emptyRaw
         else decodeThrow bs
 
-validate :: String -> RawConfig -> IO ()
+validate :: String -> RawConfig -> Either AppError ()
 validate label rc =
   case (rawImage rc, rawDockerfile rc) of
     (Just _, Just _) ->
-      throwIO $ userError $
+      Left $ ConfigError $ T.pack $
         label <> ": cannot specify both 'image' and 'dockerfile'"
-    _ -> return ()
+    _ -> Right ()
 
-parseMounts :: [Text] -> IO [MountEntry]
+parseMounts :: [Text] -> IO [Mount]
 parseMounts entries =
   mapM parseSingle entries
   where
     parseSingle t =
       case parseMount t of
         Right m  -> return m
-        Left err -> throwIO $ userError $ T.unpack err
+        Left err -> throwIO err
 
-checkOverlap :: [MountEntry] -> [MountEntry] -> IO ()
-checkOverlap globalMounts localMounts = do
-  let globalTargets = Set.fromList (map mountTarget globalMounts)
-      localTargets  = Set.fromList (map mountTarget localMounts)
+checkOverlap :: [Mount] -> [Mount] -> Either AppError ()
+checkOverlap globalMounts localMounts =
+  let globalTargets = Set.fromList (map (.target) globalMounts)
+      localTargets  = Set.fromList (map (.target) localMounts)
       overlap       = Set.intersection globalTargets localTargets
-  if Set.null overlap
-    then return ()
-    else throwIO $ userError $
-           "Overlapping container mount targets between global and local config: "
-           <> T.unpack (T.intercalate ", " (Set.toList overlap))
+  in if Set.null overlap
+       then Right ()
+       else Left $ MountOverlap (Set.toList overlap)
 
 -- ---------------------------------------------------------------------------
 -- loadConfig
@@ -144,15 +146,15 @@ loadConfig cwd globalPath = do
   local  <- loadYaml (cwd </> "claudespaces.yml")
 
   -- Validate mutual exclusion in each file
-  validate "global config" global
-  validate "local config"  local
+  either throwIO pure $ validate "global config" global
+  either throwIO pure $ validate "local config"  local
 
   -- Parse mounts
   globalMounts <- parseMounts (rawAdditionalMounts global)
   localMounts  <- parseMounts (rawAdditionalMounts local)
 
   -- Check for overlapping container targets
-  checkOverlap globalMounts localMounts
+  either throwIO pure $ checkOverlap globalMounts localMounts
 
   -- Merge image: local overrides global
   let mergedImage = case rawImage local of
@@ -166,9 +168,9 @@ loadConfig cwd globalPath = do
   let mergedMounts = globalMounts ++ localMounts
 
   return Config
-    { cfgImage            = mergedImage
-    , cfgDockerfile       = rawDockerfile local
-    , cfgGlobalDockerfile = rawDockerfile global
-    , cfgDirectories      = mergedDirs
-    , cfgAdditionalMounts = mergedMounts
+    { image            = mergedImage
+    , dockerfile       = rawDockerfile local
+    , globalDockerfile = rawDockerfile global
+    , directories      = mergedDirs
+    , additionalMounts = mergedMounts
     }

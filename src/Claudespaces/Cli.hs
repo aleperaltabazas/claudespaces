@@ -158,11 +158,11 @@ cmdNew opts = do
   -- Determine image / dockerfile from CLI + config
   let mImage      = case newImage opts of
         Just i  -> Just i
-        Nothing -> Config.cfgImage cfg
+        Nothing -> cfg.image
   let mDockerfile = case newDockerfile opts of
         Just d  -> Just d
-        Nothing -> fmap T.unpack (Config.cfgDockerfile cfg)
-  let mGlobalDockerfile = fmap T.unpack (Config.cfgGlobalDockerfile cfg)
+        Nothing -> fmap T.unpack cfg.dockerfile
+  let mGlobalDockerfile = fmap T.unpack cfg.globalDockerfile
 
   -- Check docker is reachable
   ok <- checkDocker
@@ -173,7 +173,7 @@ cmdNew opts = do
     else return ()
 
   -- Merge CLI dirs with config dirs, resolve, deduplicate
-  let configDirs = map T.unpack (Config.cfgDirectories cfg)
+  let configDirs = map T.unpack cfg.directories
   let rawDirs    = nub (newDirs opts ++ configDirs)
   resolvedDirs <- mapM canonicalizePath rawDirs
   mapM_ (\d -> do
@@ -221,7 +221,7 @@ cmdNew opts = do
   Container.checkBasenameCollision resolvedDirs
 
   -- Build mounts and create container
-  let mounts  = Container.buildMounts resolvedDirs wsd port (Config.cfgAdditionalMounts cfg) home
+  let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home
   hostMounts <- Container.resolveHostMounts home
   let envVars = Container.buildEnv port home
   cid <- Container.createContainer image (mounts ++ hostMounts) envVars
@@ -320,7 +320,7 @@ cmdStart name = do
       -- Load config to get mounts/image
       cfg    <- Config.loadConfig "." globalConfigPath
       let dirs = map T.unpack (Workspaces.wsDirs ws2)
-      let mounts  = Container.buildMounts dirs wsd port (Config.cfgAdditionalMounts cfg) home
+      let mounts  = Container.buildMounts dirs wsd port cfg.additionalMounts home
       hostMounts' <- Container.resolveHostMounts home
       let envVars = Container.buildEnv port home
       newCid <- Container.createContainer (Workspaces.wsImage ws2) (mounts ++ hostMounts') envVars

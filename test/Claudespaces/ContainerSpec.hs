@@ -1,7 +1,7 @@
 
 module Claudespaces.ContainerSpec (spec) where
 
-import Claudespaces.Config (MountEntry (..))
+import Claudespaces.Config (Mount (..))
 import Claudespaces.Container
 import Data.List (lookup)
 import System.FilePath ((</>))
@@ -57,7 +57,7 @@ spec = do
       mReadOnly shimsMount `shouldBe` True
 
     it "appends additional mounts" $ do
-      let extra = [MountEntry "/host/docs" "/docs" True]
+      let extra = [Mount "/host/docs" "/docs" True]
       let mounts = buildMounts [] stateDir hostPort extra homePath
       let lastMount = last mounts
       mSource lastMount `shouldBe` "/host/docs"
