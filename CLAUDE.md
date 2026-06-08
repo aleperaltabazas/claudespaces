@@ -4,23 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands use the project's virtual environment at `.venv/`.
-
 ```bash
-# Install dependencies (first time)
-pip install -e ".[dev]"
+# Build
+stack build
 
 # Run all tests
-.venv/bin/pytest
+stack test
 
-# Run a single test file
-.venv/bin/pytest tests/test_workspaces.py -v
+# Run tests for a single module
+stack test --test-arguments '--match Config'
 
-# Run a single test
-.venv/bin/pytest tests/test_cli.py::test_new_creates_workspace -v
-
-# Run the CLI (after install)
-.venv/bin/claudespaces --help
+# Run the CLI
+stack exec claudespaces -- --help
+stack exec claudespaces -- new ~/project
+stack exec claudespaces -- list
 ```
 
 ## Task Management
@@ -40,22 +37,24 @@ When starting any piece of work:
 
 ## Architecture
 
-Seven focused modules with `cli.py` as the only integration point:
+Seven Haskell modules under `src/Claudespaces/` with `Cli.hs` as the integration point:
 
-- **`config.py`** — loads `claudespaces.yml` from CWD; raises `ValueError` if both `image` and `dockerfile` keys are present
-- **`workspaces.py`** — JSON state CRUD at `~/.claudespaces/workspaces.json`; `STATE_FILE` is a module-level constant that tests monkeypatch; migrates automatically from `sessions.json` on first load
-- **`image.py`** — resolves a Docker image with `claude` pre-installed; always builds a `claudespaces-base:<tag>` intermediate layer, skipping if already cached locally
-- **`container.py`** — Docker SDK wrapper; `create_container` builds mount lists and creates (but does not start) a container; `attach_container` uses `subprocess` for a real TTY; mounts `shims.json` and `claudespaces-host`; sets `host.docker.internal` via `extra_hosts`
-- **`host_config.py`** — loads `~/.claudespaces/config.yml`; merges built-in operations (e.g. `notify`) with user-defined `host_bridge.operations`; writes `~/.claudespaces/shims.json` (binary→op manifest for shim injection)
-- **`host_server.py`** — stdlib HTTP server on `0.0.0.0:<port>` (default 7731); handles `POST /run`; executes ops synchronously or fire-and-forget; spawned as a background subprocess on first workspace start, killed when last workspace stops
-- **`cli.py`** — Typer app with five subcommands: `new`, `start`, `stop`, `remove`, `list`; no bare-path routing
+- **`Config.hs`** — loads `claudespaces.yml` from CWD and global config; raises error if both `image` and `dockerfile` keys are present
+- **`Workspaces.hs`** — JSON state CRUD at `~/.claudespaces/workspaces.json`; migrates automatically from `sessions.json` on first load
+- **`Image.hs`** — resolves a Docker image with `claude` pre-installed; builds a `claudespaces-base:<tag>` intermediate layer via `docker build`, skipping if already cached
+- **`Container.hs`** — Docker CLI shell-outs; `buildMounts` is a pure function computing mount lists; `createContainer` calls `docker create`; `attachContainer` uses `docker exec -it` with TTY passthrough
+- **`HostConfig.hs`** — loads `~/.config/claudespaces/claudespaces.yaml`; merges built-in operations (e.g. `notify`) with user-defined `host_bridge.operations`; writes `~/.claudespaces/shims.json`
+- **`HostServer.hs`** — Scotty HTTP server on `0.0.0.0:<port>` (default 7731); handles `POST /run`; executes ops synchronously or fire-and-forget; spawned as a background process, killed when last workspace stops
+- **`Cli.hs`** — optparse-applicative app with subcommands: `new`, `start`, `stop`, `remove`/`rm`, `list`/`ls`
 
 ### Key design decisions
 
-**Workspace lifecycle:** `status` is set to `"running"` before `attach_container` and back to `"stopped"` in a `try/finally` — this survives Python exceptions and `KeyboardInterrupt`. Auto-heal on startup detects containers that are no longer running (reboot, crash) and marks their workspaces stopped. Multiple workspaces for the same dir-set are valid. Names are unique across all workspaces.
+**Workspace lifecycle:** `status` is set to `"running"` before `attachContainer` and back to `"stopped"` in a `finally` block — this survives exceptions and `UserInterrupt`. Auto-heal on startup detects containers that are no longer running (reboot, crash) and marks their workspaces stopped. Multiple workspaces for the same dir-set are valid. Names are unique across all workspaces.
 
-**Mount strategy:** User dirs mount at `/workspace/<basename>` (rw); three `~/.claude` paths mount at `/claudespaces/host/...` (ro) if they exist on the host. Basename collision across user dirs raises `ValueError` before any container is created.
+**Mount strategy:** User dirs mount at `/workspace/<basename>` (rw); `~/.claude` paths mount at `/claudespaces/host/...` (ro) if they exist on the host. Basename collision across user dirs raises an error before any container is created.
 
-**Host bridge:** Containers communicate with the host via a local HTTP server. `claudespaces-host` (a Python stdlib script bind-mounted at `/claudespaces/bin/claudespaces-host`) POSTs `{"op": "...", "args": ...}` to `http://host.docker.internal:<port>/run`. Operations with an `override` field get transparent shim scripts injected by `entrypoint.sh` at container start (e.g. `notify-send` → `claudespaces-host notify "$@"`). The server binds to `0.0.0.0` so Docker bridge connections work; Linux requires `extra_hosts={"host.docker.internal": "host-gateway"}`.
+**Host bridge:** Containers communicate with the host via a local HTTP server. `claudespaces-host` (a Python stdlib script bind-mounted at `/claudespaces/bin/claudespaces-host`) POSTs `{"op": "...", "args": ...}` to `http://host.docker.internal:<port>/run`. Operations with an `override` field get transparent shim scripts injected by `entrypoint.sh` at container start. The server binds to `0.0.0.0` so Docker bridge connections work; Linux requires `extra_hosts={"host.docker.internal": "host-gateway"}`.
 
-**Testing:** All Docker calls are mocked — no daemon required. Workspace tests monkeypatch `STATE_FILE` to `tmp_path`. CLI tests patch at the `claudespaces.cli.*` module boundary (e.g. `claudespaces.cli.docker`, `claudespaces.cli.workspaces`, `claudespaces.cli.host_server`, `claudespaces.cli.host_config`).
+**Docker interaction:** All Docker operations use CLI shell-outs (`docker build`, `docker create`, `docker exec`, etc.) with `--format json` for structured output where needed. No Docker SDK dependency.
+
+**Testing:** Pure function tests via Hspec + Hedgehog. All Docker calls are in thin IO wrappers that are not tested. Workspace tests use a temp directory for state files.
