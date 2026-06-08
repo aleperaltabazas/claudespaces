@@ -48,6 +48,8 @@ library:
     - Claudespaces.Cli
     - Claudespaces.Config
     - Claudespaces.Container
+    - Claudespaces.Env
+    - Claudespaces.Error
     - Claudespaces.HostConfig
     - Claudespaces.HostServer
     - Claudespaces.Image
