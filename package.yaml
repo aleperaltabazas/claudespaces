@@ -35,6 +35,12 @@ executables:
 
 library:
   source-dirs: src
+  exposed-modules:
+    - Claudespaces.Cli
+    - Claudespaces.Config
+    - Claudespaces.Container
+    - Claudespaces.HostConfig
+    - Claudespaces.Workspaces
 
 tests:
   claudespaces-test:

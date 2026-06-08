@@ -18,6 +18,9 @@ library
   exposed-modules:
       Claudespaces.Cli
       Claudespaces.Config
+      Claudespaces.Container
+      Claudespaces.HostConfig
+      Claudespaces.Workspaces
   other-modules:
       Paths_claudespaces
   hs-source-dirs:
@@ -77,6 +80,9 @@ test-suite claudespaces-test
   main-is: Spec.hs
   other-modules:
       Claudespaces.ConfigSpec
+      Claudespaces.ContainerSpec
+      Claudespaces.HostConfigSpec
+      Claudespaces.WorkspacesSpec
       Paths_claudespaces
   hs-source-dirs:
       test
