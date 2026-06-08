@@ -2,6 +2,12 @@ name: claudespaces
 version: 0.1.0
 github: aleperaltabazas/claudespaces
 
+default-extensions:
+  - OverloadedStrings
+  - OverloadedRecordDot
+  - DuplicateRecordFields
+  - ScopedTypeVariables
+
 dependencies:
   - base >= 4.7 && < 5
   - aeson
@@ -12,6 +18,7 @@ dependencies:
   - file-embed
   - filepath
   - http-types
+  - mtl
   - network
   - optparse-applicative
   - process

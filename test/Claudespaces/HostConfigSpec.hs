@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 
 module Claudespaces.HostConfigSpec (spec) where
 

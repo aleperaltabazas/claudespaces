@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module Claudespaces.HostServer
   ( runServer
   , handleRun

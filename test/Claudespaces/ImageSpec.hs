@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 
 module Claudespaces.ImageSpec (spec) where
 
