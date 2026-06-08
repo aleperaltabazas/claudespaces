@@ -56,13 +56,13 @@ data NewOpts = NewOpts
 
 commandParser :: Parser Command
 commandParser = subparser
-  ( command "new"    (info newCommand    (progDesc "Create a new workspace"))
- <> command "start"  (info startCommand  (progDesc "Start an existing workspace"))
- <> command "stop"   (info stopCommand   (progDesc "Stop a running workspace"))
- <> command "remove" (info removeCommand (progDesc "Remove a workspace"))
- <> command "rm"     (info removeCommand (progDesc "Remove a workspace"))
- <> command "list"   (info listCommand   (progDesc "List all workspaces"))
- <> command "ls"     (info listCommand   (progDesc "List all workspaces"))
+  ( command "new"    (info (newCommand    <**> helper) (progDesc "Create a new workspace"))
+ <> command "start"  (info (startCommand  <**> helper) (progDesc "Start an existing workspace"))
+ <> command "stop"   (info (stopCommand   <**> helper) (progDesc "Stop a running workspace"))
+ <> command "remove" (info (removeCommand <**> helper) (progDesc "Remove a workspace"))
+ <> command "rm"     (info (removeCommand <**> helper) (progDesc "Remove a workspace"))
+ <> command "list"   (info (listCommand   <**> helper) (progDesc "List all workspaces"))
+ <> command "ls"     (info (listCommand   <**> helper) (progDesc "List all workspaces"))
   )
 
 newCommand :: Parser Command
