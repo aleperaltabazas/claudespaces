@@ -7,13 +7,15 @@ module Claudespaces.Config
   , parseMount
   ) where
 
+import           Control.Applicative ((<|>))
 import           Control.Exception  (throwIO)
 import           Data.Aeson         (FromJSON (..), withObject, (.:?))
 import           Data.List          (nub)
+import           Data.Maybe         (fromMaybe)
 import qualified Data.Set           as Set
 import           Data.Text          (Text)
 import qualified Data.Text          as T
-import           Data.Yaml          (decodeFileThrow, decodeThrow)
+import           Data.Yaml          (decodeThrow)
 import qualified Data.ByteString    as BS
 import           System.Directory   (doesFileExist)
 import           System.FilePath    ((</>))
@@ -52,10 +54,10 @@ emptyConfig = Config
 -- ---------------------------------------------------------------------------
 
 data RawConfig = RawConfig
-  { rawImage            :: Maybe Text
-  , rawDockerfile       :: Maybe Text
-  , rawDirectories      :: [Text]
-  , rawAdditionalMounts :: [Text]
+  { image            :: Maybe Text
+  , dockerfile       :: Maybe Text
+  , directories      :: [Text]
+  , additionalMounts :: [Text]
   } deriving (Eq, Show)
 
 emptyRaw :: RawConfig
@@ -67,15 +69,12 @@ instance FromJSON RawConfig where
     df    <- o .:? "dockerfile"
     dirs  <- o .:? "directories"
     mounts <- o .:? "additional-mounts"
-    return $ RawConfig
-      { rawImage            = img
-      , rawDockerfile       = df
-      , rawDirectories      = fromMaybe [] dirs
-      , rawAdditionalMounts = fromMaybe [] mounts
+    pure $ RawConfig
+      { image            = img
+      , dockerfile       = df
+      , directories      = fromMaybe [] dirs
+      , additionalMounts = fromMaybe [] mounts
       }
-    where
-      fromMaybe d Nothing  = d
-      fromMaybe _ (Just x) = x
 
 -- ---------------------------------------------------------------------------
 -- parseMount
@@ -102,29 +101,23 @@ loadYaml :: FilePath -> IO RawConfig
 loadYaml path = do
   exists <- doesFileExist path
   if not exists
-    then return emptyRaw
+    then pure emptyRaw
     else do
       bs <- BS.readFile path
       if BS.null bs
-        then return emptyRaw
+        then pure emptyRaw
         else decodeThrow bs
 
 validate :: String -> RawConfig -> Either AppError ()
 validate label rc =
-  case (rawImage rc, rawDockerfile rc) of
+  case (rc.image, rc.dockerfile) of
     (Just _, Just _) ->
       Left $ ConfigError $ T.pack $
         label <> ": cannot specify both 'image' and 'dockerfile'"
     _ -> Right ()
 
-parseMounts :: [Text] -> IO [Mount]
-parseMounts entries =
-  mapM parseSingle entries
-  where
-    parseSingle t =
-      case parseMount t of
-        Right m  -> return m
-        Left err -> throwIO err
+parseMounts :: [Text] -> Either AppError [Mount]
+parseMounts = traverse parseMount
 
 checkOverlap :: [Mount] -> [Mount] -> Either AppError ()
 checkOverlap globalMounts localMounts =
@@ -150,27 +143,25 @@ loadConfig cwd globalPath = do
   either throwIO pure $ validate "local config"  local
 
   -- Parse mounts
-  globalMounts <- parseMounts (rawAdditionalMounts global)
-  localMounts  <- parseMounts (rawAdditionalMounts local)
+  globalMounts <- either throwIO pure $ parseMounts global.additionalMounts
+  localMounts  <- either throwIO pure $ parseMounts local.additionalMounts
 
   -- Check for overlapping container targets
   either throwIO pure $ checkOverlap globalMounts localMounts
 
   -- Merge image: local overrides global
-  let mergedImage = case rawImage local of
-        Just _  -> rawImage local
-        Nothing -> rawImage global
+  let mergedImage = local.image <|> global.image
 
   -- Directories: global ++ local, deduplicated
-  let mergedDirs = nub (rawDirectories global ++ rawDirectories local)
+  let mergedDirs = nub (global.directories ++ local.directories)
 
   -- Mounts: global ++ local
   let mergedMounts = globalMounts ++ localMounts
 
-  return Config
+  pure Config
     { image            = mergedImage
-    , dockerfile       = rawDockerfile local
-    , globalDockerfile = rawDockerfile global
+    , dockerfile       = local.dockerfile
+    , globalDockerfile = global.dockerfile
     , directories      = mergedDirs
     , additionalMounts = mergedMounts
     }
