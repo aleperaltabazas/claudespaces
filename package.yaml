@@ -33,8 +33,16 @@ dependencies:
 
 executables:
   claudespaces:
-    main: Main.hs
-    source-dirs: app
+    main: app/Main.hs
+    dependencies:
+      - claudespaces
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+
+  claudespaces-bridge-server:
+    main: app/Server.hs
     dependencies:
       - claudespaces
     ghc-options:

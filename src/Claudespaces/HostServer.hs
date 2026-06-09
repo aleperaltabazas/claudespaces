@@ -27,14 +27,20 @@ import           Network.Socket            (Family (..), SockAddr (..),
                                             SocketType (..), close, connect,
                                             defaultProtocol, socket,
                                             tupleToHostAddress)
-import           System.Directory          (getHomeDirectory, removeFile)
+import           System.Directory          (createDirectoryIfMissing,
+                                            getHomeDirectory, removeFile)
 import           System.Exit               (ExitCode (..))
-import           System.FilePath           ((</>))
+import           System.FilePath           (takeDirectory, (</>))
 import           System.IO.Error           (isDoesNotExistError)
 import           System.Posix.Signals      (sigTERM, signalProcess)
 import           System.Posix.Types        (CPid (..))
-import           System.Process            (ProcessHandle, readProcessWithExitCode,
+import           System.IO                 (IOMode (..), openFile)
+import           System.Process            (CreateProcess (..), ProcessHandle,
+                                            StdStream (..), createProcess,
+                                            proc, readProcessWithExitCode,
                                             spawnProcess)
+import           System.Process.Internals  (ProcessHandle__ (..),
+                                            withProcessHandle)
 import           Web.Scotty                (ActionM, ScottyM, json, jsonData,
                                             literal, post, scotty)
 import qualified Web.Scotty                as Scotty
@@ -185,11 +191,33 @@ isRunning port = do
       close sock
 
 -- ---------------------------------------------------------------------------
--- startServer (stub)
+-- startServer
 -- ---------------------------------------------------------------------------
 
 startServer :: IO ()
-startServer = pure ()
+startServer = do
+  pidPath <- pidFilePath
+  logPath <- logFilePath
+  createDirectoryIfMissing True (takeDirectory pidPath)
+  logHandle <- openFile logPath AppendMode
+  let cp = (proc "claudespaces-bridge-server" [])
+        { std_in  = NoStream
+        , std_out = UseHandle logHandle
+        , std_err = UseHandle logHandle
+        , create_group = True
+        }
+  (_, _, _, ph) <- createProcess cp
+  mPid <- getPid ph
+  case mPid of
+    Just pid -> writeFile pidPath (show pid <> "\n")
+    Nothing  -> pure ()
+
+getPid :: ProcessHandle -> IO (Maybe Int)
+getPid ph = withProcessHandle ph go
+  where
+    go (OpenHandle pid)      = pure (Just (fromIntegral pid))
+    go (OpenExtHandle pid _) = pure (Just (fromIntegral pid))
+    go (ClosedHandle _)      = pure Nothing
 
 -- ---------------------------------------------------------------------------
 -- stopServerIfLast
