@@ -10,13 +10,13 @@ module Claudespaces.HostConfig
   , defaultShimsPath
   ) where
 
-import           Control.Exception     (catch, SomeException)
 import           Data.Aeson            (FromJSON (..), ToJSON (..), encode,
                                         withObject, (.:), (.:?), (.!=))
 import qualified Data.Aeson            as Aeson
 import qualified Data.ByteString.Lazy  as BL
 import           Data.Map.Strict       (Map)
 import qualified Data.Map.Strict       as Map
+import           Data.Maybe            (fromMaybe)
 import           Data.Text             (Text)
 import           Data.Yaml             (decodeFileThrow)
 import           System.Directory      (createDirectoryIfMissing,
@@ -28,15 +28,15 @@ import           System.FilePath       ((</>), takeDirectory)
 -- ---------------------------------------------------------------------------
 
 data Operation = Operation
-  { opCommand  :: Text
-  , opArgs     :: [Text]
-  , opAsync    :: Bool
-  , opOverride :: Maybe Text
+  { command  :: Text
+  , args     :: [Text]
+  , async    :: Bool
+  , override :: Maybe Text
   } deriving (Eq, Show)
 
 data BridgeConfig = BridgeConfig
-  { bridgePort       :: Int
-  , bridgeOperations :: Map Text Operation
+  { port       :: Int
+  , operations :: Map Text Operation
   } deriving (Eq, Show)
 
 defaultPort :: Int
@@ -48,7 +48,7 @@ defaultPort = 7731
 
 builtinOperations :: Map Text Operation
 builtinOperations = Map.fromList
-  [ ("notify", Operation "notify-send {summary} {body}" ["summary", "body"] True (Just "notify-send"))
+  [ ("notify", Operation { command = "notify-send {summary} {body}", args = ["summary", "body"], async = True, override = Just "notify-send" })
   ]
 
 -- ---------------------------------------------------------------------------
@@ -58,17 +58,17 @@ builtinOperations = Map.fromList
 instance FromJSON Operation where
   parseJSON = withObject "Operation" $ \o -> do
     cmd      <- o .:  "command"
-    args     <- o .:? "args"     .!= []
+    args_    <- o .:? "args"     .!= []
     async_   <- o .:? "async"    .!= False
-    override <- o .:? "override"
-    return $ Operation cmd args async_ override
+    override_<- o .:? "override"
+    pure $ Operation cmd args_ async_ override_
 
 instance ToJSON Operation where
   toJSON op = Aeson.object
-    [ "command"  Aeson..= opCommand op
-    , "args"     Aeson..= opArgs op
-    , "async"    Aeson..= opAsync op
-    , "override" Aeson..= opOverride op
+    [ "command"  Aeson..= op.command
+    , "args"     Aeson..= op.args
+    , "async"    Aeson..= op.async
+    , "override" Aeson..= op.override
     ]
 
 -- ---------------------------------------------------------------------------
@@ -76,24 +76,24 @@ instance ToJSON Operation where
 -- ---------------------------------------------------------------------------
 
 data RawBridgeYaml = RawBridgeYaml
-  { rawBridgePort :: Maybe Int
-  , rawBridgeOps  :: Maybe (Map Text Operation)
+  { port       :: Maybe Int
+  , operations :: Maybe (Map Text Operation)
   }
 
 instance FromJSON RawBridgeYaml where
   parseJSON = withObject "RawBridgeYaml" $ \o -> do
-    port <- o .:? "port"
-    ops  <- o .:? "operations"
-    return $ RawBridgeYaml port ops
+    p   <- o .:? "port"
+    ops <- o .:? "operations"
+    pure $ RawBridgeYaml p ops
 
 data RawGlobalYaml = RawGlobalYaml
-  { rawHostBridge :: Maybe RawBridgeYaml
+  { hostBridge :: Maybe RawBridgeYaml
   }
 
 instance FromJSON RawGlobalYaml where
   parseJSON = withObject "RawGlobalYaml" $ \o -> do
     bridge <- o .:? "host_bridge"
-    return $ RawGlobalYaml bridge
+    pure $ RawGlobalYaml bridge
 
 -- ---------------------------------------------------------------------------
 -- loadHostBridge
@@ -103,18 +103,18 @@ loadHostBridge :: FilePath -> IO BridgeConfig
 loadHostBridge path = do
   exists <- doesFileExist path
   if not exists
-    then return $ BridgeConfig defaultPort builtinOperations
+    then pure $ BridgeConfig defaultPort builtinOperations
     else do
       raw <- decodeFileThrow path :: IO RawGlobalYaml
-      case rawHostBridge raw of
+      case raw.hostBridge of
         Nothing ->
-          return $ BridgeConfig defaultPort builtinOperations
+          pure $ BridgeConfig defaultPort builtinOperations
         Just bridge -> do
-          let port     = maybe defaultPort id (rawBridgePort bridge)
-              userOps  = maybe Map.empty id (rawBridgeOps bridge)
+          let p         = fromMaybe defaultPort bridge.port
+              userOps   = fromMaybe Map.empty bridge.operations
               -- user wins on conflict: union prefers left operand
               mergedOps = Map.union userOps builtinOperations
-          return $ BridgeConfig port mergedOps
+          pure $ BridgeConfig p mergedOps
 
 -- ---------------------------------------------------------------------------
 -- overridesManifest
@@ -125,8 +125,9 @@ overridesManifest :: Map Text Operation -> Map Text Text
 overridesManifest ops =
   Map.foldrWithKey collectOverride Map.empty ops
   where
+    collectOverride :: Text -> Operation -> Map Text Text -> Map Text Text
     collectOverride opName op acc =
-      case opOverride op of
+      case op.override of
         Nothing       -> acc
         Just binary   -> Map.insert binary opName acc
 
@@ -147,4 +148,4 @@ writeShims path ops = do
 defaultShimsPath :: IO FilePath
 defaultShimsPath = do
   home <- getHomeDirectory
-  return $ home </> ".claudespaces" </> "shims.json"
+  pure $ home </> ".claudespaces" </> "shims.json"

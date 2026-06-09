@@ -74,7 +74,7 @@ stripSuffix suffix t
 -- placeholder has no matching value.
 buildCommand :: Operation -> Map Text Text -> Either Text [String]
 buildCommand op namedArgs =
-  let parts = T.words (opCommand op)
+  let parts = T.words op.command
   in  mapM substituteOne parts
   where
     substituteOne part =
@@ -114,7 +114,7 @@ handleRun opName argsVal ops =
         Right [] ->
           return (400, object ["error" .= ("empty command" :: Text)])
         Right (prog:args) ->
-          if opAsync op
+          if op.async
             then do
               result <- try (spawnProcess prog args) :: IO (Either SomeException ProcessHandle)
               case result of
@@ -139,7 +139,7 @@ handleRun opName argsVal ops =
 -- Object values extract text values by key.
 resolveArgs :: Operation -> Value -> Map Text Text
 resolveArgs op (Array vec) =
-  Map.fromList $ zip (opArgs op) (map valueToText (V.toList vec))
+  Map.fromList $ zip op.args (map valueToText (V.toList vec))
 resolveArgs _ (Object km) =
   Map.fromList
     [ (Key.toText k, valueToText v)

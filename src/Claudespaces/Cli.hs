@@ -214,9 +214,9 @@ cmdNew opts = do
 
   -- Load host bridge config, write shims
   bridgeCfg <- HostConfig.loadHostBridge globalConfigPath
-  let port = HostConfig.bridgePort bridgeCfg
+  let port = bridgeCfg.port
   shimsPath <- HostConfig.defaultShimsPath
-  HostConfig.writeShims shimsPath (HostConfig.bridgeOperations bridgeCfg)
+  HostConfig.writeShims shimsPath bridgeCfg.operations
 
   -- Check basename collisions
   either throwIO pure (Container.checkBasenameCollision resolvedDirs)
@@ -302,9 +302,9 @@ cmdStart name = do
 
   -- Load bridge config, write shims
   bridgeCfg <- HostConfig.loadHostBridge globalConfigPath
-  let port = HostConfig.bridgePort bridgeCfg
+  let port = bridgeCfg.port
   shimsPath <- HostConfig.defaultShimsPath
-  HostConfig.writeShims shimsPath (HostConfig.bridgeOperations bridgeCfg)
+  HostConfig.writeShims shimsPath bridgeCfg.operations
 
   -- If state dir doesn't exist, recreate it and recreate the container
   let wsd = Workspaces.stateDir sf name

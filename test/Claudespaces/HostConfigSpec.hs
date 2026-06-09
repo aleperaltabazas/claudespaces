@@ -20,12 +20,12 @@ spec = do
     it "returns default port when no config" $
       withSystemTempDirectory "hc" $ \dir -> do
         cfg <- loadHostBridge (dir </> "nonexistent.yaml")
-        bridgePort cfg `shouldBe` 7731
+        cfg.port `shouldBe` 7731
 
     it "builtin notify always present" $
       withSystemTempDirectory "hc" $ \dir -> do
         cfg <- loadHostBridge (dir </> "nonexistent.yaml")
-        Map.member "notify" (bridgeOperations cfg) `shouldBe` True
+        Map.member "notify" cfg.operations `shouldBe` True
 
     it "user config wins on conflict" $
       withSystemTempDirectory "hc" $ \dir -> do
@@ -41,10 +41,10 @@ spec = do
               "      override: notify-send"
             ]
         cfg <- loadHostBridge cfgFile
-        let ops = bridgeOperations cfg
+        let ops = cfg.operations
         case Map.lookup "notify" ops of
           Nothing -> expectationFailure "notify operation not found"
-          Just op -> opCommand op `shouldBe` "custom-notify {msg}"
+          Just op -> op.command `shouldBe` "custom-notify {msg}"
 
     it "loads custom port" $
       withSystemTempDirectory "hc" $ \dir -> do
@@ -55,7 +55,7 @@ spec = do
               "  port: 9999"
             ]
         cfg <- loadHostBridge cfgFile
-        bridgePort cfg `shouldBe` 9999
+        cfg.port `shouldBe` 9999
 
   describe "overridesManifest" $ do
     it "extracts override operations" $ do
