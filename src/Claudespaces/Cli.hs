@@ -1,7 +1,7 @@
 
 module Claudespaces.Cli (run) where
 
-import           Control.Exception          (SomeException, catch, finally, try)
+import           Control.Exception          (SomeException, catch, finally, throwIO, try)
 import           Data.List                  (intercalate, nub, sortBy)
 import           Data.Map.Strict            (Map)
 import qualified Data.Map.Strict            as Map
@@ -219,7 +219,7 @@ cmdNew opts = do
   HostConfig.writeShims shimsPath (HostConfig.bridgeOperations bridgeCfg)
 
   -- Check basename collisions
-  Container.checkBasenameCollision resolvedDirs
+  either throwIO pure (Container.checkBasenameCollision resolvedDirs)
 
   -- Build mounts and create container
   let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home

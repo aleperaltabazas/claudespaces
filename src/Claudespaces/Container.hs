@@ -1,12 +1,11 @@
 
 module Claudespaces.Container
-  ( MountSpec (..)
-  , checkBasenameCollision
+  ( checkBasenameCollision
   , buildMounts
   , hostClaudePaths
   , resolveHostMounts
   , buildEnv
-  , mountSpecToArgs
+  , mountToArgs
   , createContainer
   , attachContainer
   , getRunningContainerIds
@@ -14,7 +13,7 @@ module Claudespaces.Container
   , removeContainer
   ) where
 
-import           Control.Exception      (throwIO)
+import           Control.Monad          (void)
 import           System.Directory       (doesFileExist, doesDirectoryExist)
 import           Data.List              (group, sort)
 import qualified Data.Set               as Set
@@ -23,7 +22,6 @@ import           Data.Text              (Text)
 import qualified Data.Text              as T
 import           System.Exit            (ExitCode (..))
 import           System.FilePath        (takeBaseName, (</>))
-import           System.IO.Error        (userError)
 import           System.Process         ( createProcess
                                         , proc
                                         , readProcess
@@ -36,71 +34,52 @@ import           System.Process         ( createProcess
                                         )
 
 import           Claudespaces.Config    (Mount (..))
-
--- ---------------------------------------------------------------------------
--- Types
--- ---------------------------------------------------------------------------
-
-data MountSpec = MountSpec
-  { mSource   :: Text
-  , mTarget   :: Text
-  , mReadOnly :: Bool
-  } deriving (Eq, Show)
+import           Claudespaces.Error     (AppError (..))
 
 -- ---------------------------------------------------------------------------
 -- Pure functions
 -- ---------------------------------------------------------------------------
 
-checkBasenameCollision :: [FilePath] -> IO ()
-checkBasenameCollision dirs = do
+checkBasenameCollision :: [FilePath] -> Either AppError ()
+checkBasenameCollision dirs =
   let basenames = map takeBaseName dirs
       dups = map head . filter ((> 1) . length) . group . sort $ basenames
-  case dups of
-    [] -> return ()
-    (d:_) -> throwIO $ userError $
-      "Basename collision: multiple directories share the basename '" <> d <> "'"
+  in case dups of
+    []    -> pure ()
+    (d:_) -> Left (BasenameCollision d)
 
-buildMounts :: [FilePath] -> FilePath -> Int -> [Mount] -> FilePath -> [MountSpec]
+buildMounts :: [FilePath] -> FilePath -> Int -> [Mount] -> FilePath -> [Mount]
 buildMounts dirs stateDir _hostPort additionalMounts homePath =
-  userMounts ++ stateMounts ++ hostMounts ++ extraMounts
+  userMounts ++ stateMounts ++ hostMounts ++ additionalMounts
   where
     userMounts =
-      [ MountSpec
-          { mSource   = T.pack d
-          , mTarget   = T.pack $ "/workspace/" <> takeBaseName d
-          , mReadOnly = False
+      [ Mount
+          { source   = T.pack d
+          , target   = T.pack $ "/workspace/" <> takeBaseName d
+          , readOnly = False
           }
       | d <- dirs
       ]
 
     stateMounts =
-      [ MountSpec
-          { mSource   = T.pack (stateDir </> "claude.json")
-          , mTarget   = "/root/.claude.json"
-          , mReadOnly = False
+      [ Mount
+          { source   = T.pack (stateDir </> "claude.json")
+          , target   = "/root/.claude.json"
+          , readOnly = False
           }
-      , MountSpec
-          { mSource   = T.pack (stateDir </> "projects")
-          , mTarget   = "/root/.claude/projects"
-          , mReadOnly = False
+      , Mount
+          { source   = T.pack (stateDir </> "projects")
+          , target   = "/root/.claude/projects"
+          , readOnly = False
           }
       ]
 
     hostMounts =
-      [ MountSpec
-          { mSource   = T.pack (homePath </> ".claudespaces" </> "shims.json")
-          , mTarget   = "/claudespaces/shims.json"
-          , mReadOnly = True
+      [ Mount
+          { source   = T.pack (homePath </> ".claudespaces" </> "shims.json")
+          , target   = "/claudespaces/shims.json"
+          , readOnly = True
           }
-      ]
-
-    extraMounts =
-      [ MountSpec
-          { mSource   = m.source
-          , mTarget   = m.target
-          , mReadOnly = m.readOnly
-          }
-      | m <- additionalMounts
       ]
 
 -- | Host paths to mount read-only into the container if they exist on the host.
@@ -111,7 +90,7 @@ hostClaudePaths homePath =
   , (homePath </> ".claude" </> "credentials.json", "/claudespaces/host/credentials.json")
   ]
 
-resolveHostMounts :: FilePath -> IO [MountSpec]
+resolveHostMounts :: FilePath -> IO [Mount]
 resolveHostMounts homePath = do
   let paths = hostClaudePaths homePath
   fmap concat $ mapM checkAndMount paths
@@ -120,8 +99,8 @@ resolveHostMounts homePath = do
       fileExists <- doesFileExist src
       dirExists  <- doesDirectoryExist src
       if fileExists || dirExists
-        then return [MountSpec (T.pack src) (T.pack tgt) True]
-        else return []
+        then pure [Mount (T.pack src) (T.pack tgt) True]
+        else pure []
 
 buildEnv :: Int -> FilePath -> [(String, String)]
 buildEnv hostPort homePath =
@@ -130,21 +109,21 @@ buildEnv hostPort homePath =
   , ("CLAUDESPACES_HOST_PORT", show hostPort)
   ]
 
-mountSpecToArgs :: MountSpec -> [String]
-mountSpecToArgs m =
+mountToArgs :: Mount -> [String]
+mountToArgs m =
   [ "--mount"
-  , "type=bind,source=" ++ T.unpack (mSource m)
-      ++ ",target=" ++ T.unpack (mTarget m)
-      ++ if mReadOnly m then ",readonly" else ""
+  , "type=bind,source=" ++ T.unpack m.source
+      ++ ",target=" ++ T.unpack m.target
+      ++ if m.readOnly then ",readonly" else ""
   ]
 
 -- ---------------------------------------------------------------------------
 -- IO wrappers (not tested — thin shell-outs)
 -- ---------------------------------------------------------------------------
 
-createContainer :: Text -> [MountSpec] -> [(String, String)] -> IO Text
+createContainer :: Text -> [Mount] -> [(String, String)] -> IO Text
 createContainer image mounts envVars = do
-  let mountArgs = concatMap mountSpecToArgs mounts
+  let mountArgs = concatMap mountToArgs mounts
       envArgs   = concatMap (\(k, v) -> ["-e", k <> "=" <> v]) envVars
       args      = [ "create", "--tty", "--interactive"
                   , "--user", "root"
@@ -155,12 +134,12 @@ createContainer image mounts envVars = do
                   ++ envArgs
                   ++ [T.unpack image]
   out <- readProcess "docker" args ""
-  return . T.strip . T.pack $ out
+  pure . T.strip . T.pack $ out
 
 attachContainer :: Text -> IO ()
 attachContainer containerId = do
   let cid = T.unpack containerId
-  _ <- readProcess "docker" ["start", cid] ""
+  void $ readProcess "docker" ["start", cid] ""
   (_, _, _, ph) <- createProcess
     (proc "docker"
       [ "exec", "-it"
@@ -173,19 +152,17 @@ attachContainer containerId = do
     , std_err = Inherit
     , delegate_ctlc = True
     }
-  _ <- waitForProcess ph
-  return ()
+  void $ waitForProcess ph
 
 getRunningContainerIds :: IO (Set Text)
 getRunningContainerIds = do
   out <- readProcess "docker" ["ps", "-q", "--no-trunc", "--filter", "status=running"] ""
   let ids = filter (not . T.null) . map T.strip . T.lines . T.pack $ out
-  return $ Set.fromList ids
+  pure $ Set.fromList ids
 
 stopContainer :: Text -> IO ()
-stopContainer containerId = do
-  _ <- readProcess "docker" ["stop", T.unpack containerId] ""
-  return ()
+stopContainer containerId =
+  void $ readProcess "docker" ["stop", T.unpack containerId] ""
 
 removeContainer :: Text -> IO ()
 removeContainer containerId = do
@@ -195,5 +172,4 @@ removeContainer containerId = do
     , std_out = Inherit
     , std_err = Inherit
     }
-  _ <- waitForProcess ph
-  return ()
+  void $ waitForProcess ph
