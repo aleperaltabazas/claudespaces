@@ -56,24 +56,24 @@ claudespaces/
 
 ## Dependencies
 
-| Library | Purpose |
-|---------|---------|
-| `aeson` | JSON encoding/decoding for workspace state |
-| `yaml` | YAML config parsing (uses aeson under the hood) |
-| `optparse-applicative` | CLI argument parsing |
-| `scotty` | Host bridge HTTP server |
-| `process` | Shell-outs to docker CLI |
-| `directory` | File/directory manipulation |
-| `filepath` | Path operations (`takeBaseName`, `</>`) |
-| `text` | Text handling (used by aeson, scotty, throughout) |
-| `text-conversions` | Avoid boilerplate pack/unpack |
-| `bytestring` | File content hashing in Image.hs |
-| `time` | ISO 8601 timestamps for workspace metadata |
-| `cryptohash-md5` | Image tag hashing |
-| `file-embed` | Embed support files (Dockerfile.base, entrypoint.sh, claudespaces-host) into binary |
-| `hspec` | Test runner |
-| `hedgehog` | Property-based testing |
-| `hspec-hedgehog` | Integration between hspec and hedgehog |
+| Library                | Purpose                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `aeson`                | JSON encoding/decoding for workspace state                                          |
+| `yaml`                 | YAML config parsing (uses aeson under the hood)                                     |
+| `optparse-applicative` | CLI argument parsing                                                                |
+| `scotty`               | Host bridge HTTP server                                                             |
+| `process`              | Shell-outs to docker CLI                                                            |
+| `directory`            | File/directory manipulation                                                         |
+| `filepath`             | Path operations (`takeBaseName`, `</>`)                                             |
+| `text`                 | Text handling (used by aeson, scotty, throughout)                                   |
+| `text-conversions`     | Avoid boilerplate pack/unpack                                                       |
+| `bytestring`           | File content hashing in Image.hs                                                    |
+| `time`                 | ISO 8601 timestamps for workspace metadata                                          |
+| `cryptohash-md5`       | Image tag hashing                                                                   |
+| `file-embed`           | Embed support files (Dockerfile.base, entrypoint.sh, claudespaces-host) into binary |
+| `hspec`                | Test runner                                                                         |
+| `hedgehog`             | Property-based testing                                                              |
+| `hspec-hedgehog`       | Integration between hspec and hedgehog                                              |
 
 ## Module Mapping
 
@@ -150,16 +150,16 @@ The Haskell binary is a drop-in replacement. Same JSON format for `workspaces.js
 
 ## Docker CLI Interface
 
-| Operation | Command |
-|-----------|---------|
-| Check image exists | `docker image inspect <tag>` (exit code) |
-| Build image | `docker build --build-arg BASE_IMAGE=<base> -t <tag> -f <dockerfile> <context>` |
-| List running | `docker ps -q --filter status=running` |
-| Create container | `docker create --tty --interactive --user root -w /workspace --mount ... -e ... --add-host host.docker.internal:host-gateway <image>` |
-| Start container | `docker start <id>` |
-| Attach (exec) | `docker exec -it -e TERM=... <id> /claudespaces/entrypoint.sh` |
-| Stop container | `docker stop <id>` |
-| Remove container | `docker rm -f <id>` |
+| Operation          | Command                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Check image exists | `docker image inspect <tag>` (exit code)                                                                                              |
+| Build image        | `docker build --build-arg BASE_IMAGE=<base> -t <tag> -f <dockerfile> <context>`                                                       |
+| List running       | `docker ps -q --filter status=running`                                                                                                |
+| Create container   | `docker create --tty --interactive --user root -w /workspace --mount ... -e ... --add-host host.docker.internal:host-gateway <image>` |
+| Start container    | `docker start <id>`                                                                                                                   |
+| Attach (exec)      | `docker exec -it -e TERM=... <id> /claudespaces/entrypoint.sh`                                                                        |
+| Stop container     | `docker stop <id>`                                                                                                                    |
+| Remove container   | `docker rm -f <id>`                                                                                                                   |
 
 ## Testing Strategy
 

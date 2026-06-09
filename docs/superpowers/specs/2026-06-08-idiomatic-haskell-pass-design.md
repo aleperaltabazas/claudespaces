@@ -98,30 +98,30 @@ data Mount = Mount
 
 With `OverloadedRecordDot` + `DuplicateRecordFields`, all field name prefixes are removed:
 
-| Before | After |
-|--------|-------|
-| `cfgImage` | `image` |
-| `cfgDockerfile` | `dockerfile` |
-| `cfgGlobalDockerfile` | `globalDockerfile` |
-| `cfgDirectories` | `directories` |
-| `cfgAdditionalMounts` | `additionalMounts` |
-| `wsName` | `name` |
-| `wsDirs` | `dirs` |
-| `wsContainerId` | `containerId` |
-| `wsImage` | `image` |
-| `wsCreatedAt` | `createdAt` |
-| `wsLastUsedAt` | `lastUsedAt` |
-| `wsStatus` | `status` |
-| `mSource` / `mountSource` | `source` |
-| `mTarget` / `mountTarget` | `target` |
-| `mReadOnly` / `mountReadOnly` | `readOnly` |
-| `opCommand` | `command` |
-| `opArgs` | `args` |
-| `opAsync` | `async` |
-| `opOverride` | `override` |
+| Before                            | After                       |
+| --------------------------------- | --------------------------- |
+| `cfgImage`                        | `image`                     |
+| `cfgDockerfile`                   | `dockerfile`                |
+| `cfgGlobalDockerfile`             | `globalDockerfile`          |
+| `cfgDirectories`                  | `directories`               |
+| `cfgAdditionalMounts`             | `additionalMounts`          |
+| `wsName`                          | `name`                      |
+| `wsDirs`                          | `dirs`                      |
+| `wsContainerId`                   | `containerId`               |
+| `wsImage`                         | `image`                     |
+| `wsCreatedAt`                     | `createdAt`                 |
+| `wsLastUsedAt`                    | `lastUsedAt`                |
+| `wsStatus`                        | `status`                    |
+| `mSource` / `mountSource`         | `source`                    |
+| `mTarget` / `mountTarget`         | `target`                    |
+| `mReadOnly` / `mountReadOnly`     | `readOnly`                  |
+| `opCommand`                       | `command`                   |
+| `opArgs`                          | `args`                      |
+| `opAsync`                         | `async`                     |
+| `opOverride`                      | `override`                  |
 | `rawImage`, `rawDockerfile`, etc. | `image`, `dockerfile`, etc. |
-| `bridgePort` | `port` |
-| `bridgeOperations` | `operations` |
+| `bridgePort`                      | `port`                      |
+| `bridgeOperations`                | `operations`                |
 
 Field access changes from `wsName ws` to `ws.name`, `cfgImage cfg` to `cfg.image`, etc.
 
