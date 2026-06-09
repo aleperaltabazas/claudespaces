@@ -115,7 +115,7 @@ resolveImage mImage mGlobalDockerfile mDockerfile supportDir = do
 
   -- Step 1: apply global dockerfile if provided
   afterGlobal <- case mGlobalDockerfile of
-    Nothing -> return baseImage
+    Nothing -> pure baseImage
     Just df -> do
       let tag = globalTag df baseImage
       exists <- imageExists tag
