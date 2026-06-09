@@ -46,6 +46,7 @@ data Command
   | Stop Text
   | Remove Text
   | List
+  | Rebuild RebuildOpts
 
 data NewOpts = NewOpts
   { dirs       :: [String]
@@ -55,19 +56,27 @@ data NewOpts = NewOpts
   , dockerfile :: Maybe String
   }
 
+data RebuildOpts = RebuildOpts
+  { name       :: Text
+  , image      :: Maybe Text
+  , dockerfile :: Maybe String
+  , start      :: Bool
+  }
+
 -- ---------------------------------------------------------------------------
 -- Parsers
 -- ---------------------------------------------------------------------------
 
 commandParser :: Parser Command
 commandParser = subparser
-  ( command "new"    (info (newCommand    <**> helper) (progDesc "Create a new workspace"))
- <> command "start"  (info (startCommand  <**> helper) (progDesc "Start an existing workspace"))
- <> command "stop"   (info (stopCommand   <**> helper) (progDesc "Stop a running workspace"))
- <> command "remove" (info (removeCommand <**> helper) (progDesc "Remove a workspace"))
- <> command "rm"     (info (removeCommand <**> helper) (progDesc "Remove a workspace"))
- <> command "list"   (info (listCommand   <**> helper) (progDesc "List all workspaces"))
- <> command "ls"     (info (listCommand   <**> helper) (progDesc "List all workspaces"))
+  ( command "new"     (info (newCommand     <**> helper) (progDesc "Create a new workspace"))
+ <> command "start"   (info (startCommand   <**> helper) (progDesc "Start an existing workspace"))
+ <> command "stop"    (info (stopCommand    <**> helper) (progDesc "Stop a running workspace"))
+ <> command "remove"  (info (removeCommand  <**> helper) (progDesc "Remove a workspace"))
+ <> command "rm"      (info (removeCommand  <**> helper) (progDesc "Remove a workspace"))
+ <> command "list"    (info (listCommand    <**> helper) (progDesc "List all workspaces"))
+ <> command "ls"      (info (listCommand    <**> helper) (progDesc "List all workspaces"))
+ <> command "rebuild" (info (rebuildCommand <**> helper) (progDesc "Rebuild a workspace image and container"))
   )
 
 newCommand :: Parser Command
@@ -108,6 +117,27 @@ removeCommand = Remove . T.pack <$> argument str (metavar "NAME")
 
 listCommand :: Parser Command
 listCommand = pure List
+
+rebuildCommand :: Parser Command
+rebuildCommand = fmap Rebuild $ RebuildOpts
+  <$> (T.pack <$> argument str (metavar "NAME"))
+  <*> optional (option (T.pack <$> str)
+        ( long "image"
+       <> short 'i'
+       <> metavar "IMAGE"
+       <> help "Docker image to use"
+        ))
+  <*> optional (option str
+        ( long "dockerfile"
+       <> short 'd'
+       <> metavar "DOCKERFILE"
+       <> help "Path to a Dockerfile"
+        ))
+  <*> switch
+        ( long "start"
+       <> short 's'
+       <> help "Start the workspace immediately after rebuilding"
+        )
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -375,15 +405,88 @@ cmdList = do
     mapM_ printRow rows
 
 -- ---------------------------------------------------------------------------
+-- cmdRebuild
+-- ---------------------------------------------------------------------------
+
+cmdRebuild :: RebuildOpts -> App ()
+cmdRebuild opts = do
+  home          <- asks (.home)
+  globalCfgPath <- asks (.globalConfigPath)
+  sf            <- asks (.stateFile)
+  shimsPath     <- asks (.shimsPath)
+
+  (wsName, cid, port) <- liftIO $ do
+    _ <- requireWorkspace sf opts.name
+
+    -- Check docker is reachable
+    checkDocker
+
+    -- Heal stale workspaces
+    runningIds <- Container.getRunningContainerIds
+    Workspaces.healRunning sf runningIds
+
+    -- Reload workspace after heal
+    ws <- requireWorkspace sf opts.name
+    when (ws.status == Running) $ throwIO (WorkspaceAlreadyRunning opts.name)
+
+    -- Load config
+    cfg <- Config.loadConfig "." globalCfgPath
+
+    -- Determine image / dockerfile from CLI + config
+    let mImage      = case opts.image of
+          Just i  -> Just i
+          Nothing -> cfg.image
+    let mDockerfile = case opts.dockerfile of
+          Just d  -> Just d
+          Nothing -> fmap T.unpack cfg.dockerfile
+    let mGlobalDockerfile = fmap T.unpack cfg.globalDockerfile
+
+    -- Resolve image
+    image' <- withSupportDir $ \supportDir ->
+      Image.resolveImage mImage mGlobalDockerfile mDockerfile supportDir
+
+    -- Validate before destructive operations
+    let wsDirs   = map T.unpack ws.dirs
+    either throwIO pure (Container.checkBasenameCollision wsDirs)
+
+    -- Remove old container
+    Container.removeContainer ws.containerId
+
+    -- Load bridge config, write shims
+    bridgeCfg <- HostConfig.loadHostBridge globalCfgPath
+    let port = bridgeCfg.port
+    HostConfig.writeShims shimsPath bridgeCfg.operations
+    let wsd      = Workspaces.stateDir sf opts.name
+    let mounts   = Container.buildMounts wsDirs wsd port cfg.additionalMounts home
+    hostMounts  <- Container.resolveHostMounts home
+    let envVars  = Container.buildEnv port home
+    newCid <- Container.createContainer image' (mounts ++ hostMounts) envVars
+
+    -- Update workspace record
+    now <- nowUtc
+    Workspaces.updateWorkspace sf opts.name (\w -> w
+      { containerId = newCid
+      , image       = image'
+      , lastUsedAt  = now
+      })
+
+    putStrLn $ "Rebuilt workspace: " <> T.unpack opts.name
+    pure (opts.name, newCid, port)
+
+  when opts.start $
+    attachWithCleanup wsName cid port
+
+-- ---------------------------------------------------------------------------
 -- Entry point
 -- ---------------------------------------------------------------------------
 
 dispatch :: Command -> App ()
-dispatch (New    newOpts) = cmdNew newOpts
-dispatch (Start  name)    = cmdStart name
-dispatch (Stop   name)    = cmdStop name
-dispatch (Remove name)    = cmdRemove name
-dispatch List             = cmdList
+dispatch (New     newOpts) = cmdNew newOpts
+dispatch (Start   name)    = cmdStart name
+dispatch (Stop    name)    = cmdStop name
+dispatch (Remove  name)    = cmdRemove name
+dispatch List              = cmdList
+dispatch (Rebuild opts)    = cmdRebuild opts
 
 run :: IO ()
 run = do
