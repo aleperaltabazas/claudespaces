@@ -19,14 +19,23 @@ library
       Claudespaces.Cli
       Claudespaces.Config
       Claudespaces.Container
+      Claudespaces.Env
+      Claudespaces.Error
       Claudespaces.HostConfig
       Claudespaces.HostServer
       Claudespaces.Image
+      Claudespaces.Lifecycle
       Claudespaces.Workspaces
+      Claudespaces.Workspaces.Internal
   other-modules:
       Paths_claudespaces
   hs-source-dirs:
       src
+  default-extensions:
+      OverloadedStrings
+      OverloadedRecordDot
+      DuplicateRecordFields
+      ScopedTypeVariables
   build-depends:
       aeson
     , base >=4.7 && <5
@@ -37,6 +46,7 @@ library
     , file-embed
     , filepath
     , http-types
+    , mtl
     , network
     , optparse-applicative
     , process
@@ -56,6 +66,11 @@ executable claudespaces
       Paths_claudespaces
   hs-source-dirs:
       app
+  default-extensions:
+      OverloadedStrings
+      OverloadedRecordDot
+      DuplicateRecordFields
+      ScopedTypeVariables
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
@@ -68,6 +83,7 @@ executable claudespaces
     , file-embed
     , filepath
     , http-types
+    , mtl
     , network
     , optparse-applicative
     , process
@@ -93,6 +109,11 @@ test-suite claudespaces-test
       Paths_claudespaces
   hs-source-dirs:
       test
+  default-extensions:
+      OverloadedStrings
+      OverloadedRecordDot
+      DuplicateRecordFields
+      ScopedTypeVariables
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-tool-depends:
       hspec-discover:hspec-discover
@@ -110,6 +131,7 @@ test-suite claudespaces-test
     , hspec
     , hspec-hedgehog
     , http-types
+    , mtl
     , network
     , optparse-applicative
     , process

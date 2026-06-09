@@ -53,6 +53,7 @@ library:
     - Claudespaces.HostConfig
     - Claudespaces.HostServer
     - Claudespaces.Image
+    - Claudespaces.Lifecycle
     - Claudespaces.Workspaces
     - Claudespaces.Workspaces.Internal
 

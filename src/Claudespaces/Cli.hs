@@ -1,10 +1,11 @@
 
 module Claudespaces.Cli (run) where
 
-import           Control.Exception          (SomeException, catch, finally, throwIO, try)
+import           Control.Exception          (catch, throwIO)
+import           Control.Monad              (unless, when)
+import           Control.Monad.IO.Class     (liftIO)
+import           Control.Monad.Reader       (asks, runReaderT)
 import           Data.List                  (intercalate, nub, sortBy)
-import           Data.Map.Strict            (Map)
-import qualified Data.Map.Strict            as Map
 import qualified Data.Set                   as Set
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
@@ -16,10 +17,10 @@ import           System.Directory           ( canonicalizePath
                                             , doesDirectoryExist
                                             , doesFileExist
                                             , copyFile
-                                            , getHomeDirectory
                                             )
 import           System.Exit                (ExitCode (..), exitFailure)
-import           System.FilePath            ((</>), takeDirectory)
+import           System.FilePath            ((</>))
+import           System.IO                  (hPutStrLn, stderr)
 import           System.Process             (readProcessWithExitCode)
 
 import qualified Claudespaces.Config        as Config
@@ -28,7 +29,11 @@ import qualified Claudespaces.HostConfig    as HostConfig
 import qualified Claudespaces.HostServer    as HostServer
 import qualified Claudespaces.Image         as Image
 import qualified Claudespaces.Workspaces    as Workspaces
-import           Claudespaces.Workspaces    (Status (..))
+
+import           Claudespaces.Env           (App, Env (..), mkEnv)
+import           Claudespaces.Error         (AppError (..), displayError)
+import           Claudespaces.Lifecycle     (attachWithCleanup, checkDocker, healStaleWorkspaces)
+import           Claudespaces.Workspaces    (Status (..), Workspace (..))
 
 -- ---------------------------------------------------------------------------
 -- CLI data types
@@ -42,11 +47,11 @@ data Command
   | List
 
 data NewOpts = NewOpts
-  { newDirs       :: [String]
-  , newNamed      :: Maybe Text
-  , newStart      :: Bool
-  , newImage      :: Maybe Text
-  , newDockerfile :: Maybe String
+  { dirs       :: [String]
+  , named      :: Maybe Text
+  , start      :: Bool
+  , image      :: Maybe Text
+  , dockerfile :: Maybe String
   }
 
 -- ---------------------------------------------------------------------------
@@ -110,18 +115,6 @@ listCommand = pure List
 nowUtc :: IO Text
 nowUtc = T.pack . iso8601Show <$> getCurrentTime
 
-checkDocker :: IO Bool
-checkDocker = do
-  (code, _, _) <- readProcessWithExitCode "docker" ["info"] ""
-  return $ code == ExitSuccess
-
-startBridge :: Int -> IO ()
-startBridge port = do
-  running <- HostServer.isRunning port
-  if running
-    then return ()
-    else HostServer.startServer
-
 collapseHome :: FilePath -> FilePath -> String
 collapseHome home path =
   case stripPrefix' (home ++ "/") path of
@@ -132,319 +125,272 @@ collapseHome home path =
       | take (length pre) s == pre = Just (drop (length pre) s)
       | otherwise                  = Nothing
 
+statusText :: Status -> String
+statusText Running = "running"
+statusText Stopped = "stopped"
+
+requireWorkspace :: FilePath -> Text -> IO Workspace
+requireWorkspace sf n = do
+  mws <- Workspaces.getByName sf n
+  case mws of
+    Nothing -> throwIO (WorkspaceNotFound n)
+    Just w  -> pure w
+
 -- ---------------------------------------------------------------------------
 -- cmdNew
 -- ---------------------------------------------------------------------------
 
-cmdNew :: NewOpts -> IO ()
+cmdNew :: NewOpts -> App ()
 cmdNew opts = do
-  home <- getHomeDirectory
-  let globalConfigPath = home </> ".config" </> "claudespaces" </> "claudespaces.yaml"
+  home           <- asks (.home)
+  globalCfgPath  <- asks (.globalConfigPath)
+  sf             <- asks (.stateFile)
+  shimsPath      <- asks (.shimsPath)
 
-  cfg <- Config.loadConfig "." globalConfigPath
+  (wsName, cid, port) <- liftIO $ do
+    cfg <- Config.loadConfig "." globalCfgPath
 
-  sf <- Workspaces.defaultStateFile
+    -- Check --named uniqueness
+    case opts.named of
+      Just n -> do
+        exists <- Workspaces.nameExists sf n
+        when exists $ throwIO (WorkspaceAlreadyExists n)
+      Nothing -> pure ()
 
-  -- Check --named uniqueness
-  case newNamed opts of
-    Just n -> do
-      exists <- Workspaces.nameExists sf n
-      if exists
-        then do
-          putStrLn $ "Error: workspace '" <> T.unpack n <> "' already exists"
-          exitFailure
-        else return ()
-    Nothing -> return ()
+    -- Determine image / dockerfile from CLI + config
+    let mImage      = case opts.image of
+          Just i  -> Just i
+          Nothing -> cfg.image
+    let mDockerfile = case opts.dockerfile of
+          Just d  -> Just d
+          Nothing -> fmap T.unpack cfg.dockerfile
+    let mGlobalDockerfile = fmap T.unpack cfg.globalDockerfile
 
-  -- Determine image / dockerfile from CLI + config
-  let mImage      = case newImage opts of
-        Just i  -> Just i
-        Nothing -> cfg.image
-  let mDockerfile = case newDockerfile opts of
-        Just d  -> Just d
-        Nothing -> fmap T.unpack cfg.dockerfile
-  let mGlobalDockerfile = fmap T.unpack cfg.globalDockerfile
+    -- Check docker is reachable
+    checkDocker
 
-  -- Check docker is reachable
-  ok <- checkDocker
-  if not ok
-    then do
-      putStrLn "Error: Docker is not reachable. Is the daemon running?"
-      exitFailure
-    else return ()
+    -- Merge CLI dirs with config dirs, resolve, deduplicate
+    let configDirs = map T.unpack cfg.directories
+    let rawDirs    = nub (opts.dirs ++ configDirs)
+    resolvedDirs <- mapM canonicalizePath rawDirs
+    mapM_ (\d -> do
+      ex <- doesDirectoryExist d
+      unless ex $ throwIO (ConfigError (T.pack $ "directory does not exist: " <> d))
+      ) resolvedDirs
 
-  -- Merge CLI dirs with config dirs, resolve, deduplicate
-  let configDirs = map T.unpack cfg.directories
-  let rawDirs    = nub (newDirs opts ++ configDirs)
-  resolvedDirs <- mapM canonicalizePath rawDirs
-  mapM_ (\d -> do
-    ex <- doesDirectoryExist d
-    if not ex
-      then do
-        putStrLn $ "Error: directory does not exist: " <> d
-        exitFailure
-      else return ()
-    ) resolvedDirs
+    -- Resolve image
+    image' <- Image.resolveImage mImage mGlobalDockerfile mDockerfile "support"
 
-  -- Resolve image
-  image <- Image.resolveImage mImage mGlobalDockerfile mDockerfile "support"
+    -- Heal stale workspaces
+    runningIds <- Container.getRunningContainerIds
+    Workspaces.healRunning sf runningIds
 
-  -- Heal stale workspaces
-  runningIds <- Container.getRunningContainerIds
-  Workspaces.healRunning sf runningIds
+    -- Generate workspace name
+    allWs <- Workspaces.allWorkspaces sf
+    let takenNames = Set.fromList (map (.name) allWs)
+    wsName <- case opts.named of
+      Just n  -> pure n
+      Nothing -> Workspaces.generateName takenNames
 
-  -- Generate workspace name
-  allWs <- Workspaces.allWorkspaces sf
-  let takenNames = Set.fromList (map (.name) allWs)
-  wsName <- case newNamed opts of
-    Just n  -> return n
-    Nothing -> Workspaces.generateName takenNames
+    -- Create state dir
+    let wsd = Workspaces.stateDir sf wsName
+    createDirectoryIfMissing True (wsd </> "projects")
 
-  -- Create state dir
-  let wsd = Workspaces.stateDir sf wsName
-  createDirectoryIfMissing True (wsd </> "projects")
+    -- Copy ~/.claude.json if exists
+    let claudeJsonSrc = home </> ".claude.json"
+    let claudeJsonDst = wsd </> "claude.json"
+    srcExists <- doesFileExist claudeJsonSrc
+    when srcExists $ copyFile claudeJsonSrc claudeJsonDst
 
-  -- Copy ~/.claude.json if exists
-  let claudeJsonSrc = home </> ".claude.json"
-  let claudeJsonDst = wsd </> "claude.json"
-  srcExists <- doesFileExist claudeJsonSrc
-  if srcExists
-    then copyFile claudeJsonSrc claudeJsonDst
-    else return ()
+    -- Load host bridge config, write shims
+    bridgeCfg <- HostConfig.loadHostBridge globalCfgPath
+    let port = bridgeCfg.port
+    HostConfig.writeShims shimsPath bridgeCfg.operations
 
-  -- Load host bridge config, write shims
-  bridgeCfg <- HostConfig.loadHostBridge globalConfigPath
-  let port = bridgeCfg.port
-  shimsPath <- HostConfig.defaultShimsPath
-  HostConfig.writeShims shimsPath bridgeCfg.operations
+    -- Check basename collisions
+    either throwIO pure (Container.checkBasenameCollision resolvedDirs)
 
-  -- Check basename collisions
-  either throwIO pure (Container.checkBasenameCollision resolvedDirs)
+    -- Build mounts and create container
+    let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home
+    hostMounts <- Container.resolveHostMounts home
+    let envVars = Container.buildEnv port home
+    cid <- Container.createContainer image' (mounts ++ hostMounts) envVars
 
-  -- Build mounts and create container
-  let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home
-  hostMounts <- Container.resolveHostMounts home
-  let envVars = Container.buildEnv port home
-  cid <- Container.createContainer image (mounts ++ hostMounts) envVars
+    -- Save workspace
+    now <- nowUtc
+    let ws = Workspace
+          { name        = wsName
+          , dirs        = map T.pack resolvedDirs
+          , containerId = cid
+          , image       = image'
+          , createdAt   = now
+          , lastUsedAt  = now
+          , status      = Stopped
+          }
+    Workspaces.saveWorkspace sf ws
 
-  -- Save workspace
-  now <- nowUtc
-  let ws = Workspaces.Workspace
-        { Workspaces.name        = wsName
-        , Workspaces.dirs        = map T.pack resolvedDirs
-        , Workspaces.containerId = cid
-        , Workspaces.image       = image
-        , Workspaces.createdAt   = now
-        , Workspaces.lastUsedAt  = now
-        , Workspaces.status      = Stopped
-        }
-  Workspaces.saveWorkspace sf ws
-
-  putStrLn $ "Created workspace: " <> T.unpack wsName
+    putStrLn $ "Created workspace: " <> T.unpack wsName
+    pure (wsName, cid, port)
 
   -- If --start, attach
-  if newStart opts
-    then do
-      startBridge port
-      Workspaces.updateWorkspace sf wsName (\w -> w { Workspaces.status = Running })
-      Container.attachContainer cid
-        `finally` do
-          now2 <- nowUtc
-          Workspaces.updateWorkspace sf wsName (\w -> w
-            { Workspaces.status      = Stopped
-            , Workspaces.lastUsedAt  = now2
-            })
-          Container.stopContainer cid
-          HostServer.stopServerIfLast wsName sf
-    else return ()
+  when opts.start $
+    attachWithCleanup wsName cid port
 
 -- ---------------------------------------------------------------------------
 -- cmdStart
 -- ---------------------------------------------------------------------------
 
-cmdStart :: Text -> IO ()
+cmdStart :: Text -> App ()
 cmdStart name = do
-  home <- getHomeDirectory
-  let globalConfigPath = home </> ".config" </> "claudespaces" </> "claudespaces.yaml"
-  sf <- Workspaces.defaultStateFile
+  home           <- asks (.home)
+  globalCfgPath  <- asks (.globalConfigPath)
+  sf             <- asks (.stateFile)
+  shimsPath      <- asks (.shimsPath)
 
-  mws <- Workspaces.getByName sf name
-  ws  <- case mws of
-    Nothing -> do
-      putStrLn $ "Error: workspace '" <> T.unpack name <> "' not found"
-      exitFailure
-    Just w  -> return w
+  (cid, port) <- liftIO $ do
+    _ <- requireWorkspace sf name
 
-  ok <- checkDocker
-  if not ok
-    then do
-      putStrLn "Error: Docker is not reachable. Is the daemon running?"
-      exitFailure
-    else return ()
+    -- Check docker is reachable
+    checkDocker
 
-  -- Heal stale workspaces
-  runningIds <- Container.getRunningContainerIds
-  Workspaces.healRunning sf runningIds
+    -- Heal stale workspaces
+    runningIds <- Container.getRunningContainerIds
+    Workspaces.healRunning sf runningIds
 
-  -- Reload workspace after heal
-  mws2 <- Workspaces.getByName sf name
-  ws2  <- case mws2 of
-    Nothing -> do
-      putStrLn $ "Error: workspace '" <> T.unpack name <> "' not found"
-      exitFailure
-    Just w  -> return w
+    -- Reload workspace after heal
+    ws2 <- requireWorkspace sf name
 
-  if ws2.status == Running
-    then do
-      putStrLn $ "Workspace '" <> T.unpack name <> "' is already running"
-      exitFailure
-    else return ()
+    when (ws2.status == Running) $ throwIO (WorkspaceAlreadyRunning name)
 
-  -- Load bridge config, write shims
-  bridgeCfg <- HostConfig.loadHostBridge globalConfigPath
-  let port = bridgeCfg.port
-  shimsPath <- HostConfig.defaultShimsPath
-  HostConfig.writeShims shimsPath bridgeCfg.operations
+    -- Load bridge config, write shims
+    bridgeCfg <- HostConfig.loadHostBridge globalCfgPath
+    let port = bridgeCfg.port
+    HostConfig.writeShims shimsPath bridgeCfg.operations
 
-  -- If state dir doesn't exist, recreate it and recreate the container
-  let wsd = Workspaces.stateDir sf name
-  wsdExists <- doesDirectoryExist wsd
-  cid <- if wsdExists
-    then return ws2.containerId
-    else do
-      -- Migration path: recreate state dir and container
-      createDirectoryIfMissing True (wsd </> "projects")
-      let claudeJsonSrc = home </> ".claude.json"
-      let claudeJsonDst = wsd </> "claude.json"
-      srcExists <- doesFileExist claudeJsonSrc
-      if srcExists then copyFile claudeJsonSrc claudeJsonDst else return ()
-      -- Load config to get mounts/image
-      cfg    <- Config.loadConfig "." globalConfigPath
-      let wsDirs = map T.unpack ws2.dirs
-      let mounts  = Container.buildMounts wsDirs wsd port cfg.additionalMounts home
-      hostMounts' <- Container.resolveHostMounts home
-      let envVars = Container.buildEnv port home
-      newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars
-      Workspaces.updateWorkspace sf name (\w -> w { Workspaces.containerId = newCid })
-      return newCid
+    -- If state dir doesn't exist, recreate it and recreate the container
+    let wsd = Workspaces.stateDir sf name
+    wsdExists <- doesDirectoryExist wsd
+    cid <- if wsdExists
+      then pure ws2.containerId
+      else do
+        -- Migration path: recreate state dir and container
+        createDirectoryIfMissing True (wsd </> "projects")
+        let claudeJsonSrc = home </> ".claude.json"
+        let claudeJsonDst = wsd </> "claude.json"
+        srcExists <- doesFileExist claudeJsonSrc
+        when srcExists $ copyFile claudeJsonSrc claudeJsonDst
+        -- Load config to get mounts/image
+        cfg    <- Config.loadConfig "." globalCfgPath
+        let wsDirs = map T.unpack ws2.dirs
+        let mounts  = Container.buildMounts wsDirs wsd port cfg.additionalMounts home
+        hostMounts' <- Container.resolveHostMounts home
+        let envVars = Container.buildEnv port home
+        newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars
+        Workspaces.updateWorkspace sf name (\w -> w { containerId = newCid })
+        pure newCid
 
-  -- Start bridge, set running, attach
-  startBridge port
-  Workspaces.updateWorkspace sf name (\w -> w { Workspaces.status = Running })
-  Container.attachContainer cid
-    `finally` do
-      now <- nowUtc
-      Workspaces.updateWorkspace sf name (\w -> w
-        { Workspaces.status     = Stopped
-        , Workspaces.lastUsedAt = now
-        })
-      Container.stopContainer cid
-      HostServer.stopServerIfLast name sf
+    pure (cid, port)
+
+  attachWithCleanup name cid port
 
 -- ---------------------------------------------------------------------------
 -- cmdStop
 -- ---------------------------------------------------------------------------
 
-cmdStop :: Text -> IO ()
+cmdStop :: Text -> App ()
 cmdStop name = do
-  sf  <- Workspaces.defaultStateFile
-  mws <- Workspaces.getByName sf name
-  ws  <- case mws of
-    Nothing -> do
-      putStrLn $ "Error: workspace '" <> T.unpack name <> "' not found"
-      exitFailure
-    Just w  -> return w
+  sf <- asks (.stateFile)
+  liftIO $ do
+    ws <- requireWorkspace sf name
 
-  if ws.status == Stopped
-    then do
-      putStrLn $ "Workspace '" <> T.unpack name <> "' is already stopped"
-      return ()
-    else do
-      Container.stopContainer ws.containerId
-      now <- nowUtc
-      Workspaces.updateWorkspace sf name (\w -> w
-        { Workspaces.status     = Stopped
-        , Workspaces.lastUsedAt = now
-        })
-      HostServer.stopServerIfLast name sf
-      putStrLn $ "Stopped workspace: " <> T.unpack name
+    when (ws.status == Stopped) $ throwIO (WorkspaceAlreadyStopped name)
+
+    Container.stopContainer ws.containerId
+    now <- nowUtc
+    Workspaces.updateWorkspace sf name (\w -> w
+      { status     = Stopped
+      , lastUsedAt = now
+      })
+    HostServer.stopServerIfLast name sf
+    putStrLn $ "Stopped workspace: " <> T.unpack name
 
 -- ---------------------------------------------------------------------------
 -- cmdRemove
 -- ---------------------------------------------------------------------------
 
-cmdRemove :: Text -> IO ()
+cmdRemove :: Text -> App ()
 cmdRemove name = do
-  sf  <- Workspaces.defaultStateFile
-  mws <- Workspaces.getByName sf name
-  ws  <- case mws of
-    Nothing -> do
-      putStrLn $ "Error: workspace '" <> T.unpack name <> "' not found"
-      exitFailure
-    Just w  -> return w
+  sf <- asks (.stateFile)
+  liftIO $ do
+    ws <- requireWorkspace sf name
 
-  let wasRunning = ws.status == Running
-  Container.removeContainer ws.containerId
-  Workspaces.removeWorkspace sf name
-  if wasRunning then HostServer.stopServerIfLast name sf else return ()
-  -- Remove state dir
-  let wsd = Workspaces.stateDir sf name
-  removeDir wsd
-  putStrLn $ "Removed workspace: " <> T.unpack name
+    let wasRunning = ws.status == Running
+    Container.removeContainer ws.containerId
+    Workspaces.removeWorkspace sf name
+    when wasRunning $ HostServer.stopServerIfLast name sf
+    -- Remove state dir
+    let wsd = Workspaces.stateDir sf name
+    removeDir wsd
+    putStrLn $ "Removed workspace: " <> T.unpack name
   where
     removeDir dir = do
       exists <- doesDirectoryExist dir
-      if exists
-        then do
-          (code, _, _) <- readProcessWithExitCode "rm" ["-rf", dir] ""
-          case code of
-            ExitSuccess   -> return ()
-            ExitFailure _ -> putStrLn $ "Warning: could not remove state dir: " <> dir
-        else return ()
+      when exists $ do
+        (code, _, _) <- readProcessWithExitCode "rm" ["-rf", dir] ""
+        case code of
+          ExitSuccess   -> pure ()
+          ExitFailure _ -> putStrLn $ "Warning: could not remove state dir: " <> dir
 
 -- ---------------------------------------------------------------------------
 -- cmdList
 -- ---------------------------------------------------------------------------
 
-cmdList :: IO ()
+cmdList :: App ()
 cmdList = do
-  sf <- Workspaces.defaultStateFile
-  home <- getHomeDirectory
-  ws   <- Workspaces.allWorkspaces sf
-  let sorted = sortBy (\a b -> compare b.lastUsedAt a.lastUsedAt) ws
-  let nameHdr   = "NAME"
-      statusHdr = "STATUS"
-      dirsHdr   = "DIRS"
-      lastHdr   = "LAST USED"
-  let rows = map (\w ->
-        ( T.unpack w.name
-        , show w.status
-        , intercalate ", " (map (collapseHome home . T.unpack) w.dirs)
-        , T.unpack w.lastUsedAt
-        )) sorted
-  let nameW   = maximum (map (\(n,_,_,_) -> length n) rows ++ [length nameHdr])
-      statusW  = maximum (map (\(_,s,_,_) -> length s) rows ++ [length statusHdr])
-      dirsW    = maximum (map (\(_,_,d,_) -> length d) rows ++ [length dirsHdr])
-  let pad n s = s ++ replicate (n - length s) ' '
-  let printRow (n, s, d, l) = putStrLn $
-        pad nameW n <> "  " <> pad statusW s <> "  " <> pad dirsW d <> "  " <> l
-  putStrLn $ pad nameW nameHdr <> "  " <> pad statusW statusHdr <> "  " <> pad dirsW dirsHdr <> "  " <> lastHdr
-  putStrLn $ replicate (nameW + 2 + statusW + 2 + dirsW + 2 + length lastHdr) '-'
-  mapM_ printRow rows
+  sf   <- asks (.stateFile)
+  home <- asks (.home)
+  liftIO $ do
+    ws   <- Workspaces.allWorkspaces sf
+    let sorted = sortBy (\a b -> compare b.lastUsedAt a.lastUsedAt) ws
+    let nameHdr   = "NAME"
+        statusHdr = "STATUS"
+        dirsHdr   = "DIRS"
+        lastHdr   = "LAST USED"
+    let rows = map (\w ->
+          ( T.unpack w.name
+          , statusText w.status
+          , intercalate ", " (map (collapseHome home . T.unpack) w.dirs)
+          , T.unpack w.lastUsedAt
+          )) sorted
+    let nameW   = maximum (map (\(n,_,_,_) -> length n) rows ++ [length nameHdr])
+        statusW  = maximum (map (\(_,s,_,_) -> length s) rows ++ [length statusHdr])
+        dirsW    = maximum (map (\(_,_,d,_) -> length d) rows ++ [length dirsHdr])
+    let pad n s = s ++ replicate (n - length s) ' '
+    let printRow (n, s, d, l) = putStrLn $
+          pad nameW n <> "  " <> pad statusW s <> "  " <> pad dirsW d <> "  " <> l
+    putStrLn $ pad nameW nameHdr <> "  " <> pad statusW statusHdr <> "  " <> pad dirsW dirsHdr <> "  " <> lastHdr
+    putStrLn $ replicate (nameW + 2 + statusW + 2 + dirsW + 2 + length lastHdr) '-'
+    mapM_ printRow rows
 
 -- ---------------------------------------------------------------------------
 -- Entry point
 -- ---------------------------------------------------------------------------
 
+dispatch :: Command -> App ()
+dispatch (New    newOpts) = cmdNew newOpts
+dispatch (Start  name)    = cmdStart name
+dispatch (Stop   name)    = cmdStop name
+dispatch (Remove name)    = cmdRemove name
+dispatch List             = cmdList
+
 run :: IO ()
 run = do
+  env <- mkEnv
   cmd <- execParser opts
-  case cmd of
-    New    newOpts -> cmdNew newOpts
-    Start  name   -> cmdStart name
-    Stop   name   -> cmdStop name
-    Remove name   -> cmdRemove name
-    List          -> cmdList
+  runReaderT (dispatch cmd) env
+    `catch` \(e :: AppError) -> do
+      hPutStrLn stderr $ "Error: " <> displayError e
+      exitFailure
   where
     opts = info (commandParser <**> helper)
       ( fullDesc
