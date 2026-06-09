@@ -144,7 +144,7 @@ resolveImage mImage mGlobalDockerfile mDockerfile supportDir = do
     then pure finalTag
     else do
       -- Build using the support dir's entrypoint/Dockerfile
-      let claudeDockerfile = supportDir </> "Dockerfile"
+      let claudeDockerfile = supportDir </> "Dockerfile.base"
       buildImage finalTag claudeDockerfile supportDir afterLocal
       pure finalTag
 

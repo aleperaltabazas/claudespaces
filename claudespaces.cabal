@@ -25,6 +25,7 @@ library
       Claudespaces.HostServer
       Claudespaces.Image
       Claudespaces.Lifecycle
+      Claudespaces.Support
       Claudespaces.Workspaces
       Claudespaces.Workspaces.Internal
   other-modules:
@@ -52,6 +53,7 @@ library
     , process
     , random
     , scotty
+    , temporary
     , text
     , text-conversions
     , time
@@ -87,6 +89,7 @@ executable claudespaces
     , process
     , random
     , scotty
+    , temporary
     , text
     , text-conversions
     , time
@@ -122,6 +125,7 @@ executable claudespaces-bridge-server
     , process
     , random
     , scotty
+    , temporary
     , text
     , text-conversions
     , time

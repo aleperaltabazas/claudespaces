@@ -13,8 +13,8 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN mkdir -p /workspace /claudespaces /claudespaces/bin
 WORKDIR /workspace
 
-COPY support/bin/entrypoint.sh /claudespaces/entrypoint.sh
-COPY support/bin/claudespaces-host /claudespaces/bin/claudespaces-host
+COPY bin/entrypoint.sh /claudespaces/entrypoint.sh
+COPY bin/claudespaces-host /claudespaces/bin/claudespaces-host
 
 RUN chmod +x /claudespaces/entrypoint.sh /claudespaces/bin/claudespaces-host
 

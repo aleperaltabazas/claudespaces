@@ -25,6 +25,7 @@ dependencies:
   - random
   - scotty
   - text
+  - temporary
   - text-conversions
   - vector
   - time
@@ -62,6 +63,7 @@ library:
     - Claudespaces.HostServer
     - Claudespaces.Image
     - Claudespaces.Lifecycle
+    - Claudespaces.Support
     - Claudespaces.Workspaces
     - Claudespaces.Workspaces.Internal
 

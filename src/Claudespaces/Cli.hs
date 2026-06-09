@@ -28,6 +28,7 @@ import qualified Claudespaces.Container     as Container
 import qualified Claudespaces.HostConfig    as HostConfig
 import qualified Claudespaces.HostServer    as HostServer
 import qualified Claudespaces.Image         as Image
+import           Claudespaces.Support       (withSupportDir)
 import qualified Claudespaces.Workspaces    as Workspaces
 
 import           Claudespaces.Env           (App, Env (..), mkEnv)
@@ -179,7 +180,8 @@ cmdNew opts = do
       ) resolvedDirs
 
     -- Resolve image
-    image' <- Image.resolveImage mImage mGlobalDockerfile mDockerfile "support"
+    image' <- withSupportDir $ \supportDir ->
+      Image.resolveImage mImage mGlobalDockerfile mDockerfile supportDir
 
     -- Heal stale workspaces
     runningIds <- Container.getRunningContainerIds
