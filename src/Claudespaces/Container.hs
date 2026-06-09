@@ -85,9 +85,10 @@ buildMounts dirs stateDir _hostPort additionalMounts homePath =
 -- | Host paths to mount read-only into the container if they exist on the host.
 hostClaudePaths :: FilePath -> [(FilePath, String)]
 hostClaudePaths homePath =
-  [ (homePath </> ".claude" </> "settings.json", "/claudespaces/host/settings.json")
-  , (homePath </> ".claude" </> "plugins",       "/claudespaces/host/plugins")
-  , (homePath </> ".claude" </> "credentials.json", "/claudespaces/host/credentials.json")
+  [ (homePath </> ".claude.json",                    "/claudespaces/host/claude.json")
+  , (homePath </> ".claude" </> "settings.json",     "/claudespaces/host/settings.json")
+  , (homePath </> ".claude" </> "plugins",            "/claudespaces/host/plugins")
+  , (homePath </> ".claude" </> ".credentials.json", "/claudespaces/host/credentials.json")
   ]
 
 resolveHostMounts :: FilePath -> IO [Mount]

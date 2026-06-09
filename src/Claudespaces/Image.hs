@@ -65,6 +65,7 @@ imageExists tag = do
 -- | Build a Docker image with an optional base image build-arg.
 buildImage :: Text -> FilePath -> FilePath -> Text -> IO ()
 buildImage tag dockerfile context baseImage = do
+  putStrLn $ "Building image " <> T.unpack tag <> "..."
   (code, _, err) <- readProcessWithExitCode "docker"
     [ "build"
     , "--build-arg", "BASE_IMAGE=" <> T.unpack baseImage

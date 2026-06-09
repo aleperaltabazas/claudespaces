@@ -20,6 +20,10 @@ if [ -d /claudespaces/host/plugins ]; then
     fi
 fi
 
+if [ -f /claudespaces/host/claude.json ]; then
+    cp /claudespaces/host/claude.json ~/.claude.json
+fi
+
 if [ -f /claudespaces/host/credentials.json ]; then
     cp /claudespaces/host/credentials.json ~/.claude/.credentials.json
 fi
