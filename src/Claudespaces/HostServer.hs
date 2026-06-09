@@ -19,10 +19,8 @@ import qualified Data.Aeson.Key            as Key
 import qualified Data.Aeson.KeyMap         as KM
 import           Data.Map.Strict           (Map)
 import qualified Data.Map.Strict           as Map
-import           Data.Maybe                (mapMaybe)
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
-import qualified Data.Text.Encoding        as TE
 import qualified Data.Vector               as V
 import           Network.HTTP.Types.Status (mkStatus)
 import           Network.Socket            (Family (..), SockAddr (..),
@@ -52,12 +50,12 @@ import           Claudespaces.Workspaces   (Workspace (..), Status (..), allWork
 pidFilePath :: IO FilePath
 pidFilePath = do
   home <- getHomeDirectory
-  return $ home </> ".claudespaces" </> "host_bridge.pid"
+  pure $ home </> ".claudespaces" </> "host_bridge.pid"
 
 logFilePath :: IO FilePath
 logFilePath = do
   home <- getHomeDirectory
-  return $ home </> ".claudespaces" </> "host_bridge.log"
+  pure $ home </> ".claudespaces" </> "host_bridge.log"
 
 -- ---------------------------------------------------------------------------
 -- buildCommand
@@ -90,45 +88,45 @@ buildCommand op namedArgs =
 -- ---------------------------------------------------------------------------
 
 data RunRequest = RunRequest
-  { runOp   :: Text
-  , runArgs :: Maybe Value
+  { op   :: Text
+  , args :: Maybe Value
   } deriving (Show)
 
 instance FromJSON RunRequest where
   parseJSON = withObject "RunRequest" $ \o -> do
-    op   <- o .:  "op"
-    args <- o .:? "args"
-    return $ RunRequest op args
+    op'   <- o .:  "op"
+    args' <- o .:? "args"
+    pure $ RunRequest op' args'
 
 -- | Execute an operation by name, resolving args, and return (httpStatus, body).
 handleRun :: Text -> Value -> Map Text Operation -> IO (Int, Value)
 handleRun opName argsVal ops =
   case Map.lookup opName ops of
     Nothing ->
-      return (400, object ["error" .= ("unknown operation: " <> opName)])
+      pure (400, object ["error" .= ("unknown operation: " <> opName)])
     Just op -> do
       let namedArgs = resolveArgs op argsVal
       case buildCommand op namedArgs of
         Left err ->
-          return (400, object ["error" .= err])
+          pure (400, object ["error" .= err])
         Right [] ->
-          return (400, object ["error" .= ("empty command" :: Text)])
+          pure (400, object ["error" .= ("empty command" :: Text)])
         Right (prog:args) ->
           if op.async
             then do
               result <- try (spawnProcess prog args) :: IO (Either SomeException ProcessHandle)
               case result of
-                Left err -> return (500, object ["error" .= show err])
-                Right _  -> return (200, object ["status" .= ("ok" :: Text)])
+                Left err -> pure (500, object ["error" .= show err])
+                Right _  -> pure (200, object ["status" .= ("ok" :: Text)])
             else do
               result <- try (readProcessWithExitCode prog args "") :: IO (Either SomeException (ExitCode, String, String))
               case result of
-                Left err -> return (500, object ["error" .= show err])
+                Left err -> pure (500, object ["error" .= show err])
                 Right (code, out, err) ->
                   let exitCodeInt = case code of
                                       ExitSuccess   -> 0 :: Int
                                       ExitFailure n -> n
-                  in return (200, object
+                  in pure (200, object
                        [ "stdout"    .= out
                        , "stderr"    .= err
                        , "exit_code" .= exitCodeInt
@@ -162,10 +160,10 @@ runServer :: Int -> Map Text Operation -> IO ()
 runServer port ops = scotty port $ do
   post (literal "/run") $ do
     req <- jsonData :: ActionM RunRequest
-    let args = case runArgs req of
-                 Just v  -> v
-                 Nothing -> Object KM.empty
-    (code, body) <- liftIO $ handleRun (runOp req) args ops
+    let argsVal = case req.args of
+                    Just v  -> v
+                    Nothing -> Object KM.empty
+    (code, body) <- liftIO $ handleRun req.op argsVal ops
     Scotty.status (mkStatus code "")
     json body
 
@@ -176,9 +174,9 @@ runServer port ops = scotty port $ do
 isRunning :: Int -> IO Bool
 isRunning port = do
   result <- try checkSocket :: IO (Either SomeException ())
-  return $ case result of
-    Right () -> True
-    Left _   -> False
+  case result of
+    Right () -> pure True
+    Left _   -> pure False
   where
     checkSocket = do
       sock <- socket AF_INET Stream defaultProtocol
@@ -191,7 +189,7 @@ isRunning port = do
 -- ---------------------------------------------------------------------------
 
 startServer :: IO ()
-startServer = return ()
+startServer = pure ()
 
 -- ---------------------------------------------------------------------------
 -- stopServerIfLast
@@ -206,12 +204,12 @@ stopServerIfLast currentName stateFile = do
   when (null others) $ do
     pidFile <- pidFilePath
     killServer pidFile `catch` (\e -> case e of
-      _ | isDoesNotExistError (e :: IOError) -> return ()
-        | otherwise -> return ())
+      _ | isDoesNotExistError (e :: IOError) -> pure ()
+        | otherwise -> pure ())
 
 killServer :: FilePath -> IO ()
 killServer pidFile = do
   contents <- readFile pidFile
   let pid = read (T.unpack (T.strip (T.pack contents))) :: Int
   signalProcess sigTERM (fromIntegral pid :: CPid)
-  removeFile pidFile `catch` (\(_ :: IOError) -> return ())
+  removeFile pidFile `catch` (\(_ :: IOError) -> pure ())
