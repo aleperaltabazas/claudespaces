@@ -28,6 +28,7 @@ import qualified Claudespaces.HostConfig    as HostConfig
 import qualified Claudespaces.HostServer    as HostServer
 import qualified Claudespaces.Image         as Image
 import qualified Claudespaces.Workspaces    as Workspaces
+import           Claudespaces.Workspaces    (Status (..))
 
 -- ---------------------------------------------------------------------------
 -- CLI data types
@@ -194,7 +195,7 @@ cmdNew opts = do
 
   -- Generate workspace name
   allWs <- Workspaces.allWorkspaces sf
-  let takenNames = Set.fromList (map Workspaces.wsName allWs)
+  let takenNames = Set.fromList (map (.name) allWs)
   wsName <- case newNamed opts of
     Just n  -> return n
     Nothing -> Workspaces.generateName takenNames
@@ -229,13 +230,13 @@ cmdNew opts = do
   -- Save workspace
   now <- nowUtc
   let ws = Workspaces.Workspace
-        { Workspaces.wsName        = wsName
-        , Workspaces.wsDirs        = map T.pack resolvedDirs
-        , Workspaces.wsContainerId = cid
-        , Workspaces.wsImage       = image
-        , Workspaces.wsCreatedAt   = now
-        , Workspaces.wsLastUsedAt  = now
-        , Workspaces.wsStatus      = "stopped"
+        { Workspaces.name        = wsName
+        , Workspaces.dirs        = map T.pack resolvedDirs
+        , Workspaces.containerId = cid
+        , Workspaces.image       = image
+        , Workspaces.createdAt   = now
+        , Workspaces.lastUsedAt  = now
+        , Workspaces.status      = Stopped
         }
   Workspaces.saveWorkspace sf ws
 
@@ -245,13 +246,13 @@ cmdNew opts = do
   if newStart opts
     then do
       startBridge port
-      Workspaces.updateWorkspace sf wsName (\w -> w { Workspaces.wsStatus = "running" })
+      Workspaces.updateWorkspace sf wsName (\w -> w { Workspaces.status = Running })
       Container.attachContainer cid
         `finally` do
           now2 <- nowUtc
           Workspaces.updateWorkspace sf wsName (\w -> w
-            { Workspaces.wsStatus      = "stopped"
-            , Workspaces.wsLastUsedAt  = now2
+            { Workspaces.status      = Stopped
+            , Workspaces.lastUsedAt  = now2
             })
           Container.stopContainer cid
           HostServer.stopServerIfLast wsName sf
@@ -293,7 +294,7 @@ cmdStart name = do
       exitFailure
     Just w  -> return w
 
-  if Workspaces.wsStatus ws2 == "running"
+  if ws2.status == Running
     then do
       putStrLn $ "Workspace '" <> T.unpack name <> "' is already running"
       exitFailure
@@ -309,7 +310,7 @@ cmdStart name = do
   let wsd = Workspaces.stateDir sf name
   wsdExists <- doesDirectoryExist wsd
   cid <- if wsdExists
-    then return (Workspaces.wsContainerId ws2)
+    then return ws2.containerId
     else do
       -- Migration path: recreate state dir and container
       createDirectoryIfMissing True (wsd </> "projects")
@@ -319,23 +320,23 @@ cmdStart name = do
       if srcExists then copyFile claudeJsonSrc claudeJsonDst else return ()
       -- Load config to get mounts/image
       cfg    <- Config.loadConfig "." globalConfigPath
-      let dirs = map T.unpack (Workspaces.wsDirs ws2)
-      let mounts  = Container.buildMounts dirs wsd port cfg.additionalMounts home
+      let wsDirs = map T.unpack ws2.dirs
+      let mounts  = Container.buildMounts wsDirs wsd port cfg.additionalMounts home
       hostMounts' <- Container.resolveHostMounts home
       let envVars = Container.buildEnv port home
-      newCid <- Container.createContainer (Workspaces.wsImage ws2) (mounts ++ hostMounts') envVars
-      Workspaces.updateWorkspace sf name (\w -> w { Workspaces.wsContainerId = newCid })
+      newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars
+      Workspaces.updateWorkspace sf name (\w -> w { Workspaces.containerId = newCid })
       return newCid
 
   -- Start bridge, set running, attach
   startBridge port
-  Workspaces.updateWorkspace sf name (\w -> w { Workspaces.wsStatus = "running" })
+  Workspaces.updateWorkspace sf name (\w -> w { Workspaces.status = Running })
   Container.attachContainer cid
     `finally` do
       now <- nowUtc
       Workspaces.updateWorkspace sf name (\w -> w
-        { Workspaces.wsStatus     = "stopped"
-        , Workspaces.wsLastUsedAt = now
+        { Workspaces.status     = Stopped
+        , Workspaces.lastUsedAt = now
         })
       Container.stopContainer cid
       HostServer.stopServerIfLast name sf
@@ -354,16 +355,16 @@ cmdStop name = do
       exitFailure
     Just w  -> return w
 
-  if Workspaces.wsStatus ws == "stopped"
+  if ws.status == Stopped
     then do
       putStrLn $ "Workspace '" <> T.unpack name <> "' is already stopped"
       return ()
     else do
-      Container.stopContainer (Workspaces.wsContainerId ws)
+      Container.stopContainer ws.containerId
       now <- nowUtc
       Workspaces.updateWorkspace sf name (\w -> w
-        { Workspaces.wsStatus     = "stopped"
-        , Workspaces.wsLastUsedAt = now
+        { Workspaces.status     = Stopped
+        , Workspaces.lastUsedAt = now
         })
       HostServer.stopServerIfLast name sf
       putStrLn $ "Stopped workspace: " <> T.unpack name
@@ -382,8 +383,8 @@ cmdRemove name = do
       exitFailure
     Just w  -> return w
 
-  let wasRunning = Workspaces.wsStatus ws == "running"
-  Container.removeContainer (Workspaces.wsContainerId ws)
+  let wasRunning = ws.status == Running
+  Container.removeContainer ws.containerId
   Workspaces.removeWorkspace sf name
   if wasRunning then HostServer.stopServerIfLast name sf else return ()
   -- Remove state dir
@@ -410,16 +411,16 @@ cmdList = do
   sf <- Workspaces.defaultStateFile
   home <- getHomeDirectory
   ws   <- Workspaces.allWorkspaces sf
-  let sorted = sortBy (\a b -> compare (Workspaces.wsLastUsedAt b) (Workspaces.wsLastUsedAt a)) ws
+  let sorted = sortBy (\a b -> compare b.lastUsedAt a.lastUsedAt) ws
   let nameHdr   = "NAME"
       statusHdr = "STATUS"
       dirsHdr   = "DIRS"
       lastHdr   = "LAST USED"
   let rows = map (\w ->
-        ( T.unpack (Workspaces.wsName w)
-        , T.unpack (Workspaces.wsStatus w)
-        , intercalate ", " (map (collapseHome home . T.unpack) (Workspaces.wsDirs w))
-        , T.unpack (Workspaces.wsLastUsedAt w)
+        ( T.unpack w.name
+        , show w.status
+        , intercalate ", " (map (collapseHome home . T.unpack) w.dirs)
+        , T.unpack w.lastUsedAt
         )) sorted
   let nameW   = maximum (map (\(n,_,_,_) -> length n) rows ++ [length nameHdr])
       statusW  = maximum (map (\(_,s,_,_) -> length s) rows ++ [length statusHdr])

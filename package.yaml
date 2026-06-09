@@ -54,6 +54,7 @@ library:
     - Claudespaces.HostServer
     - Claudespaces.Image
     - Claudespaces.Workspaces
+    - Claudespaces.Workspaces.Internal
 
 tests:
   claudespaces-test:

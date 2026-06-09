@@ -38,10 +38,11 @@ import           System.Posix.Types        (CPid (..))
 import           System.Process            (ProcessHandle, readProcessWithExitCode,
                                             spawnProcess)
 import           Web.Scotty                (ActionM, ScottyM, json, jsonData,
-                                            literal, post, scotty, status)
+                                            literal, post, scotty)
+import qualified Web.Scotty                as Scotty
 
 import           Claudespaces.HostConfig   (Operation (..))
-import           Claudespaces.Workspaces   (Workspace (..), allWorkspaces,
+import           Claudespaces.Workspaces   (Workspace (..), Status (..), allWorkspaces,
                                             defaultStateFile)
 
 -- ---------------------------------------------------------------------------
@@ -165,7 +166,7 @@ runServer port ops = scotty port $ do
                  Just v  -> v
                  Nothing -> Object KM.empty
     (code, body) <- liftIO $ handleRun (runOp req) args ops
-    status (mkStatus code "")
+    Scotty.status (mkStatus code "")
     json body
 
 -- ---------------------------------------------------------------------------
@@ -201,7 +202,7 @@ startServer = return ()
 stopServerIfLast :: Text -> FilePath -> IO ()
 stopServerIfLast currentName stateFile = do
   workspaces <- allWorkspaces stateFile
-  let others = filter (\w -> wsName w /= currentName && wsStatus w == "running") workspaces
+  let others = filter (\w -> w.name /= currentName && w.status == Running) workspaces
   when (null others) $ do
     pidFile <- pidFilePath
     killServer pidFile `catch` (\e -> case e of

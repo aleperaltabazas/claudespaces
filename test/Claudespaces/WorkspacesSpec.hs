@@ -10,17 +10,18 @@ import qualified Data.Set            as Set
 import           Data.List           (sort)
 
 import           Claudespaces.Workspaces
+import           Claudespaces.Workspaces.Internal (adjectives, nouns)
 
 -- | A minimal workspace for use in tests
 sampleWorkspace :: Text -> Workspace
-sampleWorkspace name = Workspace
-  { wsName        = name
-  , wsDirs        = ["/home/user/proj"]
-  , wsContainerId = "abc123"
-  , wsImage       = "ubuntu:24.04"
-  , wsCreatedAt   = "2024-01-01T00:00:00"
-  , wsLastUsedAt  = "2024-01-01T00:00:00"
-  , wsStatus      = "stopped"
+sampleWorkspace n = Workspace
+  { name        = n
+  , dirs        = ["/home/user/proj"]
+  , containerId = "abc123"
+  , image       = "ubuntu:24.04"
+  , createdAt   = "2024-01-01T00:00:00"
+  , lastUsedAt  = "2024-01-01T00:00:00"
+  , status      = Stopped
   }
 
 spec :: Spec
@@ -47,8 +48,8 @@ spec = do
     it "multiple workspaces for the same dirs are allowed" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        let ws1 = (sampleWorkspace "bold-comet") { wsDirs = ["/home/user/proj"] }
-        let ws2 = (sampleWorkspace "calm-river")  { wsDirs = ["/home/user/proj"] }
+        let ws1 = (sampleWorkspace "bold-comet") { dirs = ["/home/user/proj"] }
+        let ws2 = (sampleWorkspace "calm-river")  { dirs = ["/home/user/proj"] }
         saveWorkspace f ws1
         saveWorkspace f ws2
         result <- allWorkspaces f
@@ -89,24 +90,24 @@ spec = do
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
         saveWorkspace f (sampleWorkspace "bold-comet")
-        updateWorkspace f "bold-comet" (\ws -> ws { wsStatus = "running" })
+        updateWorkspace f "bold-comet" (\ws -> ws { status = Running })
         result <- getByName f "bold-comet"
-        fmap wsStatus result `shouldBe` Just "running"
+        fmap (.status) result `shouldBe` Just Running
 
     it "leaves other fields intact" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
         let ws = sampleWorkspace "bold-comet"
         saveWorkspace f ws
-        updateWorkspace f "bold-comet" (\w -> w { wsStatus = "running" })
+        updateWorkspace f "bold-comet" (\w -> w { status = Running })
         result <- getByName f "bold-comet"
-        fmap wsImage result `shouldBe` Just "ubuntu:24.04"
-        fmap wsDirs  result `shouldBe` Just ["/home/user/proj"]
+        fmap (.image) result `shouldBe` Just "ubuntu:24.04"
+        fmap (.dirs)  result `shouldBe` Just ["/home/user/proj"]
 
     it "raises when name not found" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        updateWorkspace f "no-such-name" id `shouldThrow` anyIOException
+        updateWorkspace f "no-such-name" id `shouldThrow` anyException
 
   describe "removeWorkspace" $ do
     it "removes the correct record" $
@@ -116,42 +117,42 @@ spec = do
         saveWorkspace f (sampleWorkspace "calm-river")
         removeWorkspace f "bold-comet"
         result <- allWorkspaces f
-        map wsName result `shouldBe` ["calm-river"]
+        map (.name) result `shouldBe` ["calm-river"]
 
   describe "healRunning" $ do
     it "marks stale running workspaces as stopped" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        let ws = (sampleWorkspace "bold-comet") { wsStatus = "running", wsContainerId = "stale123" }
+        let ws = (sampleWorkspace "bold-comet") { status = Running, containerId = "stale123" }
         saveWorkspace f ws
         healRunning f (Set.fromList [])
         result <- getByName f "bold-comet"
-        fmap wsStatus result `shouldBe` Just "stopped"
+        fmap (.status) result `shouldBe` Just Stopped
 
     it "leaves actually running workspaces unchanged" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        let ws = (sampleWorkspace "bold-comet") { wsStatus = "running", wsContainerId = "live123" }
+        let ws = (sampleWorkspace "bold-comet") { status = Running, containerId = "live123" }
         saveWorkspace f ws
         healRunning f (Set.fromList ["live123"])
         result <- getByName f "bold-comet"
-        fmap wsStatus result `shouldBe` Just "running"
+        fmap (.status) result `shouldBe` Just Running
 
     it "leaves stopped workspaces unchanged" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        let ws = (sampleWorkspace "bold-comet") { wsStatus = "stopped", wsContainerId = "abc123" }
+        let ws = (sampleWorkspace "bold-comet") { status = Stopped, containerId = "abc123" }
         saveWorkspace f ws
         healRunning f (Set.fromList [])
         result <- getByName f "bold-comet"
-        fmap wsStatus result `shouldBe` Just "stopped"
+        fmap (.status) result `shouldBe` Just Stopped
 
     it "only changes stale running, not all" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        let stale   = (sampleWorkspace "bold-comet") { wsStatus = "running", wsContainerId = "stale1" }
-        let alive   = (sampleWorkspace "calm-river")  { wsStatus = "running", wsContainerId = "live1" }
-        let stopped = (sampleWorkspace "dark-nova")   { wsStatus = "stopped", wsContainerId = "old1" }
+        let stale   = (sampleWorkspace "bold-comet") { status = Running, containerId = "stale1" }
+        let alive   = (sampleWorkspace "calm-river")  { status = Running, containerId = "live1" }
+        let stopped = (sampleWorkspace "dark-nova")   { status = Stopped, containerId = "old1" }
         saveWorkspace f stale
         saveWorkspace f alive
         saveWorkspace f stopped
@@ -159,14 +160,14 @@ spec = do
         r1 <- getByName f "bold-comet"
         r2 <- getByName f "calm-river"
         r3 <- getByName f "dark-nova"
-        fmap wsStatus r1 `shouldBe` Just "stopped"
-        fmap wsStatus r2 `shouldBe` Just "running"
-        fmap wsStatus r3 `shouldBe` Just "stopped"
+        fmap (.status) r1 `shouldBe` Just Stopped
+        fmap (.status) r2 `shouldBe` Just Running
+        fmap (.status) r3 `shouldBe` Just Stopped
 
   describe "generateName" $ do
     it "produces adjective-noun format" $ do
-      name <- generateName Set.empty
-      let parts = T.splitOn "-" name
+      n <- generateName Set.empty
+      let parts = T.splitOn "-" n
       length parts `shouldBe` 2
 
     it "avoids collisions by exhausting all but one combo" $ do
@@ -178,8 +179,8 @@ spec = do
       -- Leave exactly one name available: head adjective + head noun
       let target    = head adjectives <> "-" <> head nouns
       let takenSet  = Set.fromList (filter (/= target) allCombos)
-      name <- generateName takenSet
-      name `shouldBe` target
+      n <- generateName takenSet
+      n `shouldBe` target
 
   describe "migration from sessions.json" $ do
     it "migrates sessions.json (drops id field) when workspaces.json absent" $
@@ -202,4 +203,4 @@ spec = do
         -- allWorkspaces on a non-existent workspaces.json triggers migration
         result <- allWorkspaces stateFile
         length result `shouldBe` 1
-        wsName (head result) `shouldBe` "bold-comet"
+        (.name) (head result) `shouldBe` "bold-comet"
