@@ -141,6 +141,7 @@ test-suite claudespaces-test
       Claudespaces.ConfigSpec
       Claudespaces.ContainerSpec
       Claudespaces.HostConfigSpec
+      Claudespaces.HostServerSpec
       Claudespaces.ImageSpec
       Claudespaces.WorkspacesSpec
       Paths_claudespaces

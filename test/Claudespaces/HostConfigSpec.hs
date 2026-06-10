@@ -57,18 +57,52 @@ spec = do
         cfg <- loadHostBridge cfgFile
         cfg.port `shouldBe` 9999
 
+    it "loads passthrough operations" $
+      withSystemTempDirectory "hc" $ \dir -> do
+        let cfgFile = dir </> "config.yaml"
+        writeFile' cfgFile $
+          unlines
+            [ "host_bridge:",
+              "  operations:",
+              "    gh:",
+              "      command: gh",
+              "      passthrough: true",
+              "      override: gh"
+            ]
+        cfg <- loadHostBridge cfgFile
+        case Map.lookup "gh" cfg.operations of
+          Nothing -> expectationFailure "gh operation not found"
+          Just op -> do
+            op.passthrough `shouldBe` True
+            op.override `shouldBe` Just "gh"
+
+    it "passthrough defaults to false" $
+      withSystemTempDirectory "hc" $ \dir -> do
+        let cfgFile = dir </> "config.yaml"
+        writeFile' cfgFile $
+          unlines
+            [ "host_bridge:",
+              "  operations:",
+              "    myop:",
+              "      command: do-something"
+            ]
+        cfg <- loadHostBridge cfgFile
+        case Map.lookup "myop" cfg.operations of
+          Nothing -> expectationFailure "myop not found"
+          Just op -> op.passthrough `shouldBe` False
+
   describe "overridesManifest" $ do
     it "extracts override operations" $ do
       let ops =
             Map.fromList
-              [ ("notify", Operation "notify-send {summary} {body}" ["summary", "body"] True (Just "notify-send"))
+              [ ("notify", Operation "notify-send {summary} {body}" ["summary", "body"] True (Just "notify-send") False)
               ]
       overridesManifest ops `shouldBe` Map.fromList [("notify-send", "notify")]
 
     it "returns empty map when no overrides" $ do
       let ops =
             Map.fromList
-              [ ("myop", Operation "do-something" [] False Nothing)
+              [ ("myop", Operation "do-something" [] False Nothing False)
               ]
       overridesManifest ops `shouldBe` Map.empty
 
@@ -78,7 +112,7 @@ spec = do
         let shimsPath = dir </> "shims.json"
         let ops =
               Map.fromList
-                [ ("notify", Operation "notify-send {summary} {body}" ["summary", "body"] True (Just "notify-send"))
+                [ ("notify", Operation "notify-send {summary} {body}" ["summary", "body"] True (Just "notify-send") False)
                 ]
         writeShims shimsPath ops
         contents <- BL.readFile shimsPath

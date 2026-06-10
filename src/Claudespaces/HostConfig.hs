@@ -28,10 +28,11 @@ import           System.FilePath       ((</>), takeDirectory)
 -- ---------------------------------------------------------------------------
 
 data Operation = Operation
-  { command  :: Text
-  , args     :: [Text]
-  , async    :: Bool
-  , override :: Maybe Text
+  { command     :: Text
+  , args        :: [Text]
+  , async       :: Bool
+  , override    :: Maybe Text
+  , passthrough :: Bool
   } deriving (Eq, Show)
 
 data BridgeConfig = BridgeConfig
@@ -48,7 +49,7 @@ defaultPort = 7731
 
 builtinOperations :: Map Text Operation
 builtinOperations = Map.fromList
-  [ ("notify", Operation { command = "notify-send {summary} {body}", args = ["summary", "body"], async = True, override = Just "notify-send" })
+  [ ("notify", Operation { command = "notify-send {summary} {body}", args = ["summary", "body"], async = True, override = Just "notify-send", passthrough = False })
   ]
 
 -- ---------------------------------------------------------------------------
@@ -58,17 +59,19 @@ builtinOperations = Map.fromList
 instance FromJSON Operation where
   parseJSON = withObject "Operation" $ \o -> do
     cmd      <- o .:  "command"
-    args_    <- o .:? "args"     .!= []
-    async_   <- o .:? "async"    .!= False
+    args_    <- o .:? "args"        .!= []
+    async_   <- o .:? "async"       .!= False
     override_<- o .:? "override"
-    pure $ Operation cmd args_ async_ override_
+    pass_    <- o .:? "passthrough" .!= False
+    pure $ Operation cmd args_ async_ override_ pass_
 
 instance ToJSON Operation where
   toJSON op = Aeson.object
-    [ "command"  Aeson..= op.command
-    , "args"     Aeson..= op.args
-    , "async"    Aeson..= op.async
-    , "override" Aeson..= op.override
+    [ "command"     Aeson..= op.command
+    , "args"        Aeson..= op.args
+    , "async"       Aeson..= op.async
+    , "override"    Aeson..= op.override
+    , "passthrough" Aeson..= op.passthrough
     ]
 
 -- ---------------------------------------------------------------------------

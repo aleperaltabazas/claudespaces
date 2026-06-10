@@ -5,6 +5,7 @@ module Claudespaces.HostServer
   , startServer
   , stopServerIfLast
   , buildCommand
+  , buildPassthroughCommand
   , pidFilePath
   , logFilePath
   ) where
@@ -90,6 +91,22 @@ buildCommand op namedArgs =
         Nothing -> Right (T.unpack part)
 
 -- ---------------------------------------------------------------------------
+-- buildPassthroughCommand
+-- ---------------------------------------------------------------------------
+
+-- | Build a command by appending all positional args verbatim to the base
+-- command words. Used for operations that proxy an entire CLI (e.g. gh).
+buildPassthroughCommand :: Operation -> Value -> Either Text [String]
+buildPassthroughCommand op argsVal =
+  let base = map T.unpack (T.words op.command)
+      extra = case argsVal of
+                Array vec -> map (T.unpack . valueToText) (V.toList vec)
+                _         -> []
+  in  if null base
+        then Left "empty command"
+        else Right (base ++ extra)
+
+-- ---------------------------------------------------------------------------
 -- handleRun
 -- ---------------------------------------------------------------------------
 
@@ -111,8 +128,10 @@ handleRun opName argsVal ops =
     Nothing ->
       pure (400, object ["error" .= ("unknown operation: " <> opName)])
     Just op -> do
-      let namedArgs = resolveArgs op argsVal
-      case buildCommand op namedArgs of
+      let cmdResult = if op.passthrough
+                        then buildPassthroughCommand op argsVal
+                        else buildCommand op (resolveArgs op argsVal)
+      case cmdResult of
         Left err ->
           pure (400, object ["error" .= err])
         Right [] ->
