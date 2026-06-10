@@ -9,7 +9,8 @@ module Claudespaces.Config
 
 import           Control.Applicative ((<|>))
 import           Control.Exception  (throwIO)
-import           Data.Aeson         (FromJSON (..), withObject, (.:?))
+import           Data.Aeson         (FromJSON (..), ToJSON (..), object,
+                                     withObject, (.:), (.:?), (.=))
 import           Data.List          (nub)
 import           Data.Maybe         (fromMaybe)
 import qualified Data.Set           as Set
@@ -31,6 +32,20 @@ data Mount = Mount
   , target   :: Text
   , readOnly :: Bool
   } deriving (Eq, Show)
+
+instance ToJSON Mount where
+  toJSON m = object
+    [ "source"    .= m.source
+    , "target"    .= m.target
+    , "read_only" .= m.readOnly
+    ]
+
+instance FromJSON Mount where
+  parseJSON = withObject "Mount" $ \o ->
+    Mount
+      <$> o .: "source"
+      <*> o .: "target"
+      <*> o .: "read_only"
 
 data Config = Config
   { image            :: Maybe Text

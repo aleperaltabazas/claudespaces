@@ -9,6 +9,7 @@ import qualified Data.Text           as T
 import qualified Data.Set            as Set
 import           Data.List           (sort)
 
+import           Claudespaces.Config  (Mount (..))
 import           Claudespaces.Workspaces
 import           Claudespaces.Workspaces.Internal (adjectives, nouns)
 
@@ -22,6 +23,7 @@ sampleWorkspace n = Workspace
   , createdAt   = "2024-01-01T00:00:00"
   , lastUsedAt  = "2024-01-01T00:00:00"
   , status      = Stopped
+  , mounts      = []
   }
 
 spec :: Spec
@@ -204,3 +206,40 @@ spec = do
         result <- allWorkspaces stateFile
         length result `shouldBe` 1
         (.name) (head result) `shouldBe` "bold-comet"
+
+  describe "mounts field" $ do
+    it "deserializes with empty mounts when field is absent" $
+      withSystemTempDirectory "ws" $ \dir -> do
+        let stateFile = dir </> "workspaces.json"
+        writeFile stateFile $ unlines
+          [ "[{"
+          , "  \"name\": \"test-ws\","
+          , "  \"dirs\": [\"/home/user/proj\"],"
+          , "  \"container_id\": \"abc123\","
+          , "  \"image\": \"ubuntu:24.04\","
+          , "  \"created_at\": \"2024-01-01T00:00:00\","
+          , "  \"last_used_at\": \"2024-01-01T00:00:00\","
+          , "  \"status\": \"stopped\""
+          , "}]"
+          ]
+        result <- allWorkspaces stateFile
+        length result `shouldBe` 1
+        (.mounts) (head result) `shouldBe` []
+
+    it "round-trips workspaces with mounts" $
+      withSystemTempDirectory "ws" $ \dir -> do
+        let stateFile = dir </> "workspaces.json"
+        let ws = (sampleWorkspace "mount-test")
+              { mounts = [ Mount "/host/data" "/data" False
+                         , Mount "/host/docs" "/docs" True
+                         ]
+              }
+        saveWorkspace stateFile ws
+        result <- allWorkspaces stateFile
+        length result `shouldBe` 1
+        let loaded = head result
+        length loaded.mounts `shouldBe` 2
+        (.source) (head loaded.mounts) `shouldBe` "/host/data"
+        (.readOnly) (head loaded.mounts) `shouldBe` False
+        (.source) (loaded.mounts !! 1) `shouldBe` "/host/docs"
+        (.readOnly) (loaded.mounts !! 1) `shouldBe` True

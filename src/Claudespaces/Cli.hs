@@ -5,7 +5,7 @@ import           Control.Exception          (catch, throwIO)
 import           Control.Monad              (unless, when)
 import           Control.Monad.IO.Class     (liftIO)
 import           Control.Monad.Reader       (asks, runReaderT)
-import           Data.List                  (intercalate, nub, sortBy)
+import           Data.List                  (intercalate, nub, sortBy, (\\))
 import qualified Data.Set                   as Set
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
@@ -47,6 +47,7 @@ data Command
   | Remove Text
   | List
   | Rebuild RebuildOpts
+  | Mount MountOpts
 
 data NewOpts = NewOpts
   { dirs       :: [String]
@@ -63,6 +64,11 @@ data RebuildOpts = RebuildOpts
   , start      :: Bool
   }
 
+data MountOpts = MountOpts
+  { name   :: Text
+  , mounts :: [Text]
+  }
+
 -- ---------------------------------------------------------------------------
 -- Parsers
 -- ---------------------------------------------------------------------------
@@ -77,6 +83,7 @@ commandParser = subparser
  <> command "list"    (info (listCommand    <**> helper) (progDesc "List all workspaces"))
  <> command "ls"      (info (listCommand    <**> helper) (progDesc "List all workspaces"))
  <> command "rebuild" (info (rebuildCommand <**> helper) (progDesc "Rebuild a workspace image and container"))
+ <> command "mount"   (info (mountCommand   <**> helper) (progDesc "Add bind mounts to a workspace (recreates container)"))
   )
 
 newCommand :: Parser Command
@@ -138,6 +145,16 @@ rebuildCommand = fmap Rebuild $ RebuildOpts
        <> short 's'
        <> help "Start the workspace immediately after rebuilding"
         )
+
+mountCommand :: Parser Command
+mountCommand = fmap Mount $ MountOpts
+  <$> (T.pack <$> argument str (metavar "NAME"))
+  <*> some (option (T.pack <$> str)
+        ( long "mount"
+       <> short 'm'
+       <> metavar "SRC:DST[:ro|rw]"
+       <> help "Bind mount to add (can be specified multiple times)"
+        ))
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -258,6 +275,7 @@ cmdNew opts = do
           , createdAt   = now
           , lastUsedAt  = now
           , status      = Stopped
+          , mounts      = []
           }
     Workspaces.saveWorkspace sf ws
 
@@ -314,7 +332,8 @@ cmdStart name = do
         -- Load config to get mounts/image
         cfg    <- Config.loadConfig "." globalCfgPath
         let wsDirs = map T.unpack ws2.dirs
-        let mounts  = Container.buildMounts wsDirs wsd port cfg.additionalMounts home
+        let allMounts = cfg.additionalMounts ++ ws2.mounts
+        let mounts  = Container.buildMounts wsDirs wsd port allMounts home
         hostMounts' <- Container.resolveHostMounts home
         let envVars = Container.buildEnv port home
         newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars
@@ -405,6 +424,60 @@ cmdList = do
     mapM_ printRow rows
 
 -- ---------------------------------------------------------------------------
+-- cmdMount
+-- ---------------------------------------------------------------------------
+
+cmdMount :: MountOpts -> App ()
+cmdMount opts = do
+  home          <- asks (.home)
+  globalCfgPath <- asks (.globalConfigPath)
+  sf            <- asks (.stateFile)
+  shimsPath     <- asks (.shimsPath)
+
+  liftIO $ do
+    newMounts <- either throwIO pure $ traverse Config.parseMount opts.mounts
+
+    checkDocker
+    runningIds <- Container.getRunningContainerIds
+    Workspaces.healRunning sf runningIds
+
+    ws <- requireWorkspace sf opts.name
+    when (ws.status == Running) $ throwIO (WorkspaceAlreadyRunning opts.name)
+
+    let updatedMounts = ws.mounts ++ newMounts
+
+    cfg <- Config.loadConfig "." globalCfgPath
+    let wsDirs = map T.unpack ws.dirs
+    let wsd = Workspaces.stateDir sf opts.name
+    bridgeCfg <- HostConfig.loadHostBridge globalCfgPath
+    let port = bridgeCfg.port
+
+    let allMounts = cfg.additionalMounts ++ updatedMounts
+    let builtMounts = Container.buildMounts wsDirs wsd port allMounts home
+    let targets = map (\m -> m.target) builtMounts
+    let dupes = targets \\ nub targets
+    unless (null dupes) $ throwIO (MountOverlap (nub dupes))
+
+    hPutStrLn stderr $ "Warning: container for workspace '"
+      <> T.unpack opts.name
+      <> "' will be recreated. Any container state (installed packages, files outside mounted directories) will be lost."
+
+    Container.removeContainer ws.containerId
+    HostConfig.writeShims shimsPath bridgeCfg.operations
+    hostMounts <- Container.resolveHostMounts home
+    let envVars = Container.buildEnv port home
+    newCid <- Container.createContainer ws.image (builtMounts ++ hostMounts) envVars
+
+    now <- nowUtc
+    Workspaces.updateWorkspace sf opts.name (\w -> w
+      { containerId = newCid
+      , mounts      = updatedMounts
+      , lastUsedAt  = now
+      })
+
+    putStrLn $ "Added " <> show (length newMounts) <> " mount(s) to workspace: " <> T.unpack opts.name
+
+-- ---------------------------------------------------------------------------
 -- cmdRebuild
 -- ---------------------------------------------------------------------------
 
@@ -457,7 +530,8 @@ cmdRebuild opts = do
     let port = bridgeCfg.port
     HostConfig.writeShims shimsPath bridgeCfg.operations
     let wsd      = Workspaces.stateDir sf opts.name
-    let mounts   = Container.buildMounts wsDirs wsd port cfg.additionalMounts home
+    let allMounts = cfg.additionalMounts ++ ws.mounts
+    let mounts   = Container.buildMounts wsDirs wsd port allMounts home
     hostMounts  <- Container.resolveHostMounts home
     let envVars  = Container.buildEnv port home
     newCid <- Container.createContainer image' (mounts ++ hostMounts) envVars
@@ -487,6 +561,7 @@ dispatch (Stop    name)    = cmdStop name
 dispatch (Remove  name)    = cmdRemove name
 dispatch List              = cmdList
 dispatch (Rebuild opts)    = cmdRebuild opts
+dispatch (Mount   opts)    = cmdMount opts
 
 run :: IO ()
 run = do

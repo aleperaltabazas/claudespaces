@@ -16,7 +16,7 @@ module Claudespaces.Workspaces
 
 import           Control.Exception               (throwIO)
 import           Data.Aeson                      (FromJSON (..), ToJSON (..), Value (..),
-                                                  object, withObject, (.:), (.=))
+                                                  object, withObject, (.:), (.:?), (.!=), (.=))
 import qualified Data.Aeson                      as Aeson
 import qualified Data.Aeson.KeyMap               as KM
 import qualified Data.Aeson.Key                  as Key
@@ -32,6 +32,7 @@ import           System.FilePath                 (takeDirectory, (</>))
 import           System.Random                   (randomRIO)
 import           System.Environment              (lookupEnv)
 
+import           Claudespaces.Config             (Mount)
 import           Claudespaces.Error              (AppError (..))
 import           Claudespaces.Workspaces.Internal (adjectives, nouns)
 
@@ -59,6 +60,7 @@ data Workspace = Workspace
   , createdAt   :: Text
   , lastUsedAt  :: Text
   , status      :: Status
+  , mounts      :: [Mount]
   } deriving (Eq, Show)
 
 instance FromJSON Workspace where
@@ -71,6 +73,7 @@ instance FromJSON Workspace where
       <*> o .: "created_at"
       <*> o .: "last_used_at"
       <*> o .: "status"
+      <*> o .:? "mounts" .!= []
 
 instance ToJSON Workspace where
   toJSON ws = object
@@ -81,6 +84,7 @@ instance ToJSON Workspace where
     , "created_at"   .= ws.createdAt
     , "last_used_at" .= ws.lastUsedAt
     , "status"       .= ws.status
+    , "mounts"       .= ws.mounts
     ]
 
 -- ---------------------------------------------------------------------------

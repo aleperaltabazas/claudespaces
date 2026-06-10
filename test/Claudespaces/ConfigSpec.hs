@@ -1,6 +1,7 @@
 
 module Claudespaces.ConfigSpec (spec) where
 
+import qualified Data.Aeson as Aeson
 import Claudespaces.Config
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -143,6 +144,15 @@ spec = do
       withSystemTempDirectory "cfg" $ \dir -> do
         cfg <- loadConfig dir (dir </> "nope.yaml")
         cfg.additionalMounts `shouldBe` []
+
+  describe "Mount JSON" $ do
+    it "round-trips through ToJSON/FromJSON" $ do
+      let m = Mount "/src" "/dst" True
+      Aeson.decode (Aeson.encode m) `shouldBe` Just m
+
+    it "round-trips rw mount" $ do
+      let m = Mount "/host/data" "/container/data" False
+      Aeson.decode (Aeson.encode m) `shouldBe` Just m
 
 isLeft :: Either a b -> Bool
 isLeft (Left _) = True
