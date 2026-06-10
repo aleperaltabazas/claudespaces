@@ -20,6 +20,10 @@ stack exec claudespaces -- new ~/project
 stack exec claudespaces -- list
 ```
 
+## Workflow
+
+When you finish a piece of work, commit it with a clear, descriptive message.
+
 ## Task Management
 
 This project tracks work with the `backlog` CLI. Never move task files manually with `mv` or git — always use the CLI.
