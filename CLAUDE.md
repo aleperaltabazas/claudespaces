@@ -38,6 +38,7 @@ When starting any piece of work:
    - No match: create a new task with `backlog create`.
 2. **Move to WIP** when you begin work: `backlog move <slug> --to wip`.
 3. **Move to done** when the work is complete: `backlog move <slug> --to done`.
+4. **Commit** after moving to done, so the task file change is included in the same commit as the work.
 
 ## Architecture
 
