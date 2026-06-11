@@ -50,6 +50,8 @@ for binary, op_name in shims.items():
 PYEOF
 fi
 
+git config --global --add safe.directory '*'
+
 IS_SANDBOX=1 exec /root/.local/bin/claude \
     --allow-dangerously-skip-permissions \
     --dangerously-skip-permissions \
