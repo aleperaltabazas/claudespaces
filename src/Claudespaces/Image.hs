@@ -11,7 +11,7 @@ module Claudespaces.Image
   , resolveImage
   ) where
 
-import           Control.Exception      (throwIO)
+import           Control.Exception      (throwIO, try, SomeException)
 import           Control.Monad          (unless)
 import           Data.List              (sort)
 import           Data.Maybe             (fromMaybe)
@@ -24,7 +24,7 @@ import           Claudespaces.Error     (AppError (..))
 import           System.Directory       (doesFileExist, listDirectory, doesDirectoryExist)
 import           System.Exit            (ExitCode (..))
 import           System.FilePath        ((</>))
-import           System.Process         (readProcessWithExitCode)
+import           System.Process         (callProcess, readProcessWithExitCode)
 import           Text.Printf            (printf)
 
 -- | Replace ':' and '/' with '-' in a Docker tag string.
@@ -66,16 +66,16 @@ imageExists tag = do
 buildImage :: Text -> FilePath -> FilePath -> Text -> IO ()
 buildImage tag dockerfile context baseImage = do
   putStrLn $ "Building image " <> T.unpack tag <> "..."
-  (code, _, err) <- readProcessWithExitCode "docker"
+  result <- try $ callProcess "docker"
     [ "build"
     , "--build-arg", "BASE_IMAGE=" <> T.unpack baseImage
     , "-t", T.unpack tag
     , "-f", dockerfile
     , context
-    ] ""
-  case code of
-    ExitSuccess   -> pure ()
-    ExitFailure _ -> throwIO (DockerBuildFailed (T.pack err))
+    ]
+  case result of
+    Right ()         -> pure ()
+    Left (e :: SomeException) -> throwIO (DockerBuildFailed (T.pack (show e)))
 
 -- | Recursively list all files under a directory, sorted.
 listDirectoryRecursive :: FilePath -> IO [FilePath]
