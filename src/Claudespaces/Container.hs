@@ -1,6 +1,7 @@
 
 module Claudespaces.Container
   ( checkBasenameCollision
+  , containerHome
   , buildMounts
   , hostClaudePaths
   , resolveHostMounts
@@ -48,8 +49,13 @@ checkBasenameCollision dirs =
     []    -> pure ()
     (d:_) -> Left (BasenameCollision d)
 
-buildMounts :: [FilePath] -> FilePath -> Int -> [Mount] -> FilePath -> [Mount]
-buildMounts dirs stateDir _hostPort additionalMounts homePath =
+containerHome :: Int -> FilePath
+containerHome uid
+  | uid == 0  = "/root"
+  | otherwise = "/home/claude"
+
+buildMounts :: [FilePath] -> FilePath -> Int -> [Mount] -> FilePath -> FilePath -> [Mount]
+buildMounts dirs stateDir _hostPort additionalMounts homePath cHome =
   userMounts ++ stateMounts ++ hostMounts ++ additionalMounts
   where
     userMounts =
@@ -64,12 +70,12 @@ buildMounts dirs stateDir _hostPort additionalMounts homePath =
     stateMounts =
       [ Mount
           { source   = T.pack (stateDir </> "claude.json")
-          , target   = "/root/.claude.json"
+          , target   = T.pack $ cHome </> ".claude.json"
           , readOnly = False
           }
       , Mount
           { source   = T.pack (stateDir </> "projects")
-          , target   = "/root/.claude/projects"
+          , target   = T.pack $ cHome </> ".claude" </> "projects"
           , readOnly = False
           }
       ]
@@ -103,11 +109,13 @@ resolveHostMounts homePath = do
         then pure [Mount (T.pack src) (T.pack tgt) True]
         else pure []
 
-buildEnv :: Int -> FilePath -> [(String, String)]
-buildEnv hostPort homePath =
+buildEnv :: Int -> FilePath -> Int -> Int -> [(String, String)]
+buildEnv hostPort homePath hostUid hostGid =
   [ ("IS_SANDBOX", "1")
   , ("HOST_HOME", homePath)
   , ("CLAUDESPACES_HOST_PORT", show hostPort)
+  , ("HOST_UID", show hostUid)
+  , ("HOST_GID", show hostGid)
   ]
 
 mountToArgs :: Mount -> [String]

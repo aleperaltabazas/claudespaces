@@ -21,6 +21,7 @@ import           System.Directory           ( canonicalizePath
 import           System.Exit                (ExitCode (..), exitFailure)
 import           System.FilePath            ((</>))
 import           System.IO                  (hPutStrLn, stderr)
+import           System.Posix.User          (getRealUserID, getRealGroupID)
 import           System.Process             (readProcessWithExitCode)
 
 import qualified Claudespaces.Config        as Config
@@ -260,9 +261,12 @@ cmdNew opts = do
     either throwIO pure (Container.checkBasenameCollision resolvedDirs)
 
     -- Build mounts and create container
-    let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home
+    uid <- fromIntegral <$> getRealUserID
+    gid <- fromIntegral <$> getRealGroupID
+    let cHome   = Container.containerHome uid
+    let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home cHome
     hostMounts <- Container.resolveHostMounts home
-    let envVars = Container.buildEnv port home
+    let envVars = Container.buildEnv port home uid gid
     cid <- Container.createContainer image' (mounts ++ hostMounts) envVars
 
     -- Save workspace
@@ -333,9 +337,12 @@ cmdStart name = do
         cfg    <- Config.loadConfig "." globalCfgPath
         let wsDirs = map T.unpack ws2.dirs
         let allMounts = cfg.additionalMounts ++ ws2.mounts
-        let mounts  = Container.buildMounts wsDirs wsd port allMounts home
+        uid <- fromIntegral <$> getRealUserID
+        gid <- fromIntegral <$> getRealGroupID
+        let cHome   = Container.containerHome uid
+        let mounts  = Container.buildMounts wsDirs wsd port allMounts home cHome
         hostMounts' <- Container.resolveHostMounts home
-        let envVars = Container.buildEnv port home
+        let envVars = Container.buildEnv port home uid gid
         newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars
         Workspaces.updateWorkspace sf name (\w -> w { containerId = newCid })
         pure newCid
@@ -453,7 +460,10 @@ cmdMount opts = do
     let port = bridgeCfg.port
 
     let allMounts = cfg.additionalMounts ++ updatedMounts
-    let builtMounts = Container.buildMounts wsDirs wsd port allMounts home
+    uid <- fromIntegral <$> getRealUserID
+    gid <- fromIntegral <$> getRealGroupID
+    let cHome = Container.containerHome uid
+    let builtMounts = Container.buildMounts wsDirs wsd port allMounts home cHome
     let targets = map (\m -> m.target) builtMounts
     let dupes = targets \\ nub targets
     unless (null dupes) $ throwIO (MountOverlap (nub dupes))
@@ -465,7 +475,7 @@ cmdMount opts = do
     Container.removeContainer ws.containerId
     HostConfig.writeShims shimsPath bridgeCfg.operations
     hostMounts <- Container.resolveHostMounts home
-    let envVars = Container.buildEnv port home
+    let envVars = Container.buildEnv port home uid gid
     newCid <- Container.createContainer ws.image (builtMounts ++ hostMounts) envVars
 
     now <- nowUtc
@@ -531,9 +541,12 @@ cmdRebuild opts = do
     HostConfig.writeShims shimsPath bridgeCfg.operations
     let wsd      = Workspaces.stateDir sf opts.name
     let allMounts = cfg.additionalMounts ++ ws.mounts
-    let mounts   = Container.buildMounts wsDirs wsd port allMounts home
+    uid <- fromIntegral <$> getRealUserID
+    gid <- fromIntegral <$> getRealGroupID
+    let cHome    = Container.containerHome uid
+    let mounts   = Container.buildMounts wsDirs wsd port allMounts home cHome
     hostMounts  <- Container.resolveHostMounts home
-    let envVars  = Container.buildEnv port home
+    let envVars  = Container.buildEnv port home uid gid
     newCid <- Container.createContainer image' (mounts ++ hostMounts) envVars
 
     -- Update workspace record
