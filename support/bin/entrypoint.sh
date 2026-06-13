@@ -4,8 +4,14 @@ set -e
 # Create non-root user matching host UID/GID if needed
 if [ -n "$HOST_UID" ] && [ "$HOST_UID" != "0" ]; then
     HOST_GID="${HOST_GID:-$HOST_UID}"
-    groupadd -g "$HOST_GID" claude 2>/dev/null || true
-    useradd -m -u "$HOST_UID" -g "$HOST_GID" -s /bin/bash claude
+    EXISTING_USER=$(getent passwd "$HOST_UID" | cut -d: -f1 || true)
+    if [ -n "$EXISTING_USER" ]; then
+        usermod -l claude -d /home/claude -m "$EXISTING_USER" 2>/dev/null || true
+        groupmod -n claude "$(getent group "$HOST_GID" | cut -d: -f1)" 2>/dev/null || true
+    else
+        groupadd -g "$HOST_GID" claude 2>/dev/null || true
+        useradd -m -u "$HOST_UID" -g "$HOST_GID" -s /bin/bash claude
+    fi
     echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude
     chmod 0440 /etc/sudoers.d/claude
     mkdir -p /home/claude/.local/bin
