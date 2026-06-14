@@ -19,16 +19,14 @@ RUN apt update && apt install -y \
 RUN set -e; \
     EXISTING_USER=$(getent passwd "${HOST_UID}" | cut -d: -f1 || true); \
     EXISTING_GROUP=$(getent group "${HOST_GID}" | cut -d: -f1 || true); \
-    if [ -n "$EXISTING_USER" ] && [ "$EXISTING_USER" != "claude" ]; then \
-        usermod -l claude -d /home/claude -m "$EXISTING_USER"; \
-    fi; \
     if [ -n "$EXISTING_GROUP" ] && [ "$EXISTING_GROUP" != "claude" ]; then \
         groupmod -n claude "$EXISTING_GROUP"; \
+    elif [ -z "$EXISTING_GROUP" ]; then \
+        groupadd -g "${HOST_GID}" claude; \
     fi; \
-    if [ -z "$EXISTING_USER" ]; then \
-        if [ -z "$EXISTING_GROUP" ]; then \
-            groupadd -g "${HOST_GID}" claude; \
-        fi; \
+    if [ -n "$EXISTING_USER" ] && [ "$EXISTING_USER" != "claude" ]; then \
+        usermod -l claude -d /home/claude -m -g "${HOST_GID}" "$EXISTING_USER"; \
+    elif [ -z "$EXISTING_USER" ]; then \
         useradd -m -u "${HOST_UID}" -g "${HOST_GID}" -s /bin/bash claude; \
     fi; \
     echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude; \
