@@ -40,11 +40,10 @@ COPY bin/claudespaces-host /claudespaces/bin/claudespaces-host
 
 RUN chmod +x /claudespaces/entrypoint.sh /claudespaces/bin/claudespaces-host
 
-# Install Claude as root with HOME pointing at the claude user's home,
-# then fix ownership so the claude user can read/exec everything. Running
-# the install as USER claude hits a chmod EPERM on the downloaded binary
-# inside the docker build sandbox, so we keep the install as root.
-RUN HOME=/home/claude curl -fsSL https://claude.ai/install.sh | bash && \
-    chown -R claude:claude /home/claude
+# Install Claude as the claude user so it lands in /home/claude/.local/bin
+# (the install script uses XDG paths that resolve to the real user's home,
+# so we can't just HOME-override as root).
+USER claude
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 ENTRYPOINT ["sleep", "infinity"]
