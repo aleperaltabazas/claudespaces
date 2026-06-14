@@ -21,20 +21,24 @@ spec = do
 
   describe "intermediateTag" $ do
     it "starts with claudespaces-base:" $
-      T.isPrefixOf "claudespaces-base:" (intermediateTag "ubuntu:24.04" "abc123")
+      T.isPrefixOf "claudespaces-base:" (intermediateTag "ubuntu:24.04" "abc123" 1000)
         `shouldBe` True
 
     it "contains sanitized base tag" $
-      T.isInfixOf "ubuntu-24.04" (intermediateTag "ubuntu:24.04" "abc123")
+      T.isInfixOf "ubuntu-24.04" (intermediateTag "ubuntu:24.04" "abc123" 1000)
         `shouldBe` True
 
-    it "ends with hash" $
-      T.isSuffixOf "abc123" (intermediateTag "ubuntu:24.04" "abc123")
+    it "contains hash" $
+      T.isInfixOf "abc123" (intermediateTag "ubuntu:24.04" "abc123" 1000)
         `shouldBe` True
 
     it "produces expected format" $
-      intermediateTag "ubuntu:24.04" "abc123"
-        `shouldBe` "claudespaces-base:ubuntu-24.04-abc123"
+      intermediateTag "ubuntu:24.04" "abc123" 1000
+        `shouldBe` "claudespaces-base:ubuntu-24.04-abc123-uid1000"
+
+    it "differs for different UIDs" $
+      intermediateTag "ubuntu:24.04" "abc123" 1000
+        `shouldNotBe` intermediateTag "ubuntu:24.04" "abc123" 1001
 
   describe "globalTag" $ do
     it "starts with claudespaces-global:" $

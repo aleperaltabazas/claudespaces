@@ -227,9 +227,13 @@ cmdNew opts = do
       unless ex $ throwIO (ConfigError (T.pack $ "directory does not exist: " <> d))
       ) resolvedDirs
 
+    -- Get host UID/GID
+    uid <- fromIntegral <$> getRealUserID
+    gid <- fromIntegral <$> getRealGroupID
+
     -- Resolve image
     image' <- withSupportDir $ \supportDir ->
-      Image.resolveImage mImage mGlobalDockerfile mDockerfile supportDir
+      Image.resolveImage mImage mGlobalDockerfile mDockerfile supportDir uid gid
 
     -- Heal stale workspaces
     runningIds <- Container.getRunningContainerIds
@@ -261,13 +265,11 @@ cmdNew opts = do
     either throwIO pure (Container.checkBasenameCollision resolvedDirs)
 
     -- Build mounts and create container
-    uid <- fromIntegral <$> getRealUserID
-    gid <- fromIntegral <$> getRealGroupID
     let cHome   = Container.containerHome uid
     let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home cHome
     hostMounts <- Container.resolveHostMounts home
-    let envVars = Container.buildEnv port home uid gid
-    cid <- Container.createContainer image' (mounts ++ hostMounts) envVars
+    let envVars = Container.buildEnv port home
+    cid <- Container.createContainer image' (mounts ++ hostMounts) envVars uid gid
 
     -- Save workspace
     now <- nowUtc
@@ -342,8 +344,8 @@ cmdStart name = do
         let cHome   = Container.containerHome uid
         let mounts  = Container.buildMounts wsDirs wsd port allMounts home cHome
         hostMounts' <- Container.resolveHostMounts home
-        let envVars = Container.buildEnv port home uid gid
-        newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars
+        let envVars = Container.buildEnv port home
+        newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars uid gid
         Workspaces.updateWorkspace sf name (\w -> w { containerId = newCid })
         pure newCid
 
@@ -475,8 +477,8 @@ cmdMount opts = do
     Container.removeContainer ws.containerId
     HostConfig.writeShims shimsPath bridgeCfg.operations
     hostMounts <- Container.resolveHostMounts home
-    let envVars = Container.buildEnv port home uid gid
-    newCid <- Container.createContainer ws.image (builtMounts ++ hostMounts) envVars
+    let envVars = Container.buildEnv port home
+    newCid <- Container.createContainer ws.image (builtMounts ++ hostMounts) envVars uid gid
 
     now <- nowUtc
     Workspaces.updateWorkspace sf opts.name (\w -> w
@@ -524,9 +526,13 @@ cmdRebuild opts = do
           Nothing -> fmap T.unpack cfg.dockerfile
     let mGlobalDockerfile = fmap T.unpack cfg.globalDockerfile
 
+    -- Get host UID/GID
+    uid <- fromIntegral <$> getRealUserID
+    gid <- fromIntegral <$> getRealGroupID
+
     -- Resolve image
     image' <- withSupportDir $ \supportDir ->
-      Image.resolveImage mImage mGlobalDockerfile mDockerfile supportDir
+      Image.resolveImage mImage mGlobalDockerfile mDockerfile supportDir uid gid
 
     -- Validate before destructive operations
     let wsDirs   = map T.unpack ws.dirs
@@ -541,13 +547,11 @@ cmdRebuild opts = do
     HostConfig.writeShims shimsPath bridgeCfg.operations
     let wsd      = Workspaces.stateDir sf opts.name
     let allMounts = cfg.additionalMounts ++ ws.mounts
-    uid <- fromIntegral <$> getRealUserID
-    gid <- fromIntegral <$> getRealGroupID
     let cHome    = Container.containerHome uid
     let mounts   = Container.buildMounts wsDirs wsd port allMounts home cHome
     hostMounts  <- Container.resolveHostMounts home
-    let envVars  = Container.buildEnv port home uid gid
-    newCid <- Container.createContainer image' (mounts ++ hostMounts) envVars
+    let envVars  = Container.buildEnv port home
+    newCid <- Container.createContainer image' (mounts ++ hostMounts) envVars uid gid
 
     -- Update workspace record
     now <- nowUtc

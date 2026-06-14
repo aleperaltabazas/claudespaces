@@ -79,7 +79,7 @@ spec = do
       lastMount.readOnly `shouldBe` True
 
   describe "buildEnv" $ do
-    let env = buildEnv 9999 "/home/user" 1000 1000
+    let env = buildEnv 9999 "/home/user"
 
     it "includes IS_SANDBOX" $
       lookup "IS_SANDBOX" env `shouldBe` Just "1"
@@ -90,8 +90,8 @@ spec = do
     it "includes CLAUDESPACES_HOST_PORT" $
       lookup "CLAUDESPACES_HOST_PORT" env `shouldBe` Just "9999"
 
-    it "includes HOST_UID" $
-      lookup "HOST_UID" env `shouldBe` Just "1000"
+    it "does not include HOST_UID" $
+      lookup "HOST_UID" env `shouldBe` Nothing
 
-    it "includes HOST_GID" $
-      lookup "HOST_GID" env `shouldBe` Just "1000"
+    it "does not include HOST_GID" $
+      lookup "HOST_GID" env `shouldBe` Nothing

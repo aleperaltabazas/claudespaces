@@ -35,10 +35,10 @@ sanitizeTag = T.map replace
     replace '/' = '-'
     replace c   = c
 
--- | Build an intermediate cache tag: "claudespaces-base:<sanitizedBase>-<hash>"
-intermediateTag :: Text -> Text -> Text
-intermediateTag baseTag hash =
-  "claudespaces-base:" <> sanitizeTag baseTag <> "-" <> hash
+-- | Build an intermediate cache tag: "claudespaces-base:<sanitizedBase>-<hash>-uid<uid>"
+intermediateTag :: Text -> Text -> Int -> Text
+intermediateTag baseTag hash uid =
+  "claudespaces-base:" <> sanitizeTag baseTag <> "-" <> hash <> "-uid" <> T.pack (show uid)
 
 -- | Compute "claudespaces-global:<hash12>" from dockerfile path and base image.
 globalTag :: FilePath -> Text -> Text
@@ -63,16 +63,19 @@ imageExists tag = do
   pure $ code == ExitSuccess
 
 -- | Build a Docker image with an optional base image build-arg.
-buildImage :: Text -> FilePath -> FilePath -> Text -> IO ()
-buildImage tag dockerfile context baseImage = do
+buildImage :: Text -> FilePath -> FilePath -> Text -> [(String, String)] -> IO ()
+buildImage tag dockerfile context baseImage extraArgs = do
   putStrLn $ "Building image " <> T.unpack tag <> "..."
   result <- try $ callProcess "docker"
-    [ "build"
-    , "--build-arg", "BASE_IMAGE=" <> T.unpack baseImage
-    , "-t", T.unpack tag
-    , "-f", dockerfile
-    , context
-    ]
+    ( [ "build"
+      , "--build-arg", "BASE_IMAGE=" <> T.unpack baseImage
+      ]
+      ++ concatMap (\(k, v) -> ["--build-arg", k <> "=" <> v]) extraArgs
+      ++ [ "-t", T.unpack tag
+         , "-f", dockerfile
+         , context
+         ]
+    )
   case result of
     Right ()         -> pure ()
     Left (e :: SomeException) -> throwIO (DockerBuildFailed (T.pack (show e)))
@@ -105,8 +108,10 @@ resolveImage
   -> Maybe FilePath  -- ^ mGlobalDockerfile: path to global Dockerfile
   -> Maybe FilePath  -- ^ mDockerfile: path to project-local Dockerfile
   -> FilePath        -- ^ supportDir: directory with support files
+  -> Int             -- ^ hostUid: host user ID (baked into image at build time)
+  -> Int             -- ^ hostGid: host group ID (baked into image at build time)
   -> IO Text
-resolveImage mImage mGlobalDockerfile mDockerfile supportDir = do
+resolveImage mImage mGlobalDockerfile mDockerfile supportDir hostUid hostGid = do
   -- Validate dockerfile paths exist
   mapM_ checkExists mGlobalDockerfile
   mapM_ checkExists mDockerfile
@@ -123,7 +128,7 @@ resolveImage mImage mGlobalDockerfile mDockerfile supportDir = do
       if exists
         then pure tag
         else do
-          buildImage tag df supportDir baseImage
+          buildImage tag df supportDir baseImage []
           pure tag
 
   -- Step 2: apply local dockerfile if provided
@@ -135,18 +140,19 @@ resolveImage mImage mGlobalDockerfile mDockerfile supportDir = do
       if exists
         then pure tag
         else do
-          buildImage tag df supportDir afterGlobal
+          buildImage tag df supportDir afterGlobal []
           pure tag
 
-  -- Step 3: build the claudespaces-base layer
-  let finalTag = intermediateTag afterLocal supportHash
+  -- Step 3: build the claudespaces-base layer (with UID/GID baked in)
+  let finalTag = intermediateTag afterLocal supportHash hostUid
   exists <- imageExists finalTag
   if exists
     then pure finalTag
     else do
       -- Build using the support dir's entrypoint/Dockerfile
       let claudeDockerfile = supportDir </> "Dockerfile.base"
-      buildImage finalTag claudeDockerfile supportDir afterLocal
+      let uidGidArgs = [ ("HOST_UID", show hostUid), ("HOST_GID", show hostGid) ]
+      buildImage finalTag claudeDockerfile supportDir afterLocal uidGidArgs
       pure finalTag
 
   where

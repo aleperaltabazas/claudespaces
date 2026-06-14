@@ -109,13 +109,11 @@ resolveHostMounts homePath = do
         then pure [Mount (T.pack src) (T.pack tgt) True]
         else pure []
 
-buildEnv :: Int -> FilePath -> Int -> Int -> [(String, String)]
-buildEnv hostPort homePath hostUid hostGid =
+buildEnv :: Int -> FilePath -> [(String, String)]
+buildEnv hostPort homePath =
   [ ("IS_SANDBOX", "1")
   , ("HOST_HOME", homePath)
   , ("CLAUDESPACES_HOST_PORT", show hostPort)
-  , ("HOST_UID", show hostUid)
-  , ("HOST_GID", show hostGid)
   ]
 
 mountToArgs :: Mount -> [String]
@@ -130,12 +128,13 @@ mountToArgs m =
 -- IO wrappers (not tested — thin shell-outs)
 -- ---------------------------------------------------------------------------
 
-createContainer :: Text -> [Mount] -> [(String, String)] -> IO Text
-createContainer image mounts envVars = do
+createContainer :: Text -> [Mount] -> [(String, String)] -> Int -> Int -> IO Text
+createContainer image mounts envVars hostUid hostGid = do
   let mountArgs = concatMap mountToArgs mounts
       envArgs   = concatMap (\(k, v) -> ["-e", k <> "=" <> v]) envVars
+      userSpec  = show hostUid <> ":" <> show hostGid
       args      = [ "create", "--tty", "--interactive"
-                  , "--user", "root"
+                  , "--user", userSpec
                   , "-w", "/workspace"
                   , "--add-host", "host.docker.internal:host-gateway"
                   ]
