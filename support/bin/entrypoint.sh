@@ -28,22 +28,23 @@ if [ -f /claudespaces/host/credentials.json ]; then
     cp /claudespaces/host/credentials.json "$HOME/.claude/.credentials.json"
 fi
 
-# Add claudespaces bin to PATH so claudespaces-host is always findable
-export PATH="/claudespaces/bin:$PATH"
+# Put user-writable shim dir and claudespaces bin at the front of PATH so
+# shims take precedence over /usr/local/bin and claudespaces-host is findable.
+export PATH="$HOME/.local/bin:/claudespaces/bin:$PATH"
 
-# Inject shims for host bridge overrides (needs root to write to /usr/local/bin)
+# Inject shims for host bridge overrides into the user's local bin dir (no sudo
+# needed since the claude user owns ~/.local/bin and PATH puts it first).
 if [ -f /claudespaces/shims.json ]; then
-    sudo python3 - <<'PYEOF'
+    mkdir -p "$HOME/.local/bin"
+    SHIM_DIR="$HOME/.local/bin" python3 - <<'PYEOF'
 import json, os, stat
 
+shim_dir = os.environ["SHIM_DIR"]
 with open("/claudespaces/shims.json") as f:
     shims = json.load(f)
 
 for binary, op_name in shims.items():
-    path = f"/usr/local/bin/{binary}"
-    orig = f"{path}.orig"
-    if os.path.exists(path) and not os.path.islink(path):
-        os.rename(path, orig)
+    path = os.path.join(shim_dir, binary)
     with open(path, "w") as f:
         f.write(f"#!/bin/sh\nclaudespaces-host {op_name} \"$@\"\n")
     os.chmod(path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
