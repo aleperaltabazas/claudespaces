@@ -1,30 +1,6 @@
 #!/bin/bash
 set -e
 
-# Create non-root user matching host UID/GID if needed
-if [ -n "$HOST_UID" ] && [ "$HOST_UID" != "0" ]; then
-    HOST_GID="${HOST_GID:-$HOST_UID}"
-    EXISTING_USER=$(getent passwd "$HOST_UID" | cut -d: -f1 || true)
-    if [ -n "$EXISTING_USER" ]; then
-        usermod -l claude -d /home/claude -m "$EXISTING_USER" 2>/dev/null || true
-        groupmod -n claude "$(getent group "$HOST_GID" | cut -d: -f1)" 2>/dev/null || true
-    else
-        groupadd -g "$HOST_GID" claude 2>/dev/null || true
-        useradd -m -u "$HOST_UID" -g "$HOST_GID" -s /bin/bash claude
-    fi
-    echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude
-    chmod 0440 /etc/sudoers.d/claude
-    mkdir -p /home/claude/.local/bin
-    cp /root/.local/bin/claude /home/claude/.local/bin/claude
-    chown -R claude:claude /home/claude
-    export HOME=/home/claude
-    EXEC_PREFIX="gosu claude"
-    CLAUDE_BIN="/home/claude/.local/bin/claude"
-else
-    EXEC_PREFIX=""
-    CLAUDE_BIN="/root/.local/bin/claude"
-fi
-
 mkdir -p "$HOME/.claude"
 
 if [ -f /claudespaces/host/settings.json ]; then
@@ -55,9 +31,9 @@ fi
 # Add claudespaces bin to PATH so claudespaces-host is always findable
 export PATH="/claudespaces/bin:$PATH"
 
-# Inject shims for host bridge overrides
+# Inject shims for host bridge overrides (needs root to write to /usr/local/bin)
 if [ -f /claudespaces/shims.json ]; then
-    python3 - <<'PYEOF'
+    sudo python3 - <<'PYEOF'
 import json, os, stat
 
 with open("/claudespaces/shims.json") as f:
@@ -76,7 +52,7 @@ fi
 
 git config --global --add safe.directory '*'
 
-IS_SANDBOX=1 exec $EXEC_PREFIX "$CLAUDE_BIN" \
+IS_SANDBOX=1 exec "$HOME/.local/bin/claude" \
     --allow-dangerously-skip-permissions \
     --dangerously-skip-permissions \
     --enable-auto-mode \
