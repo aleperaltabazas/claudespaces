@@ -6,7 +6,8 @@ import urllib.error
 import urllib.request
 
 PORT = int(os.environ.get("CLAUDESPACES_HOST_PORT", "7731"))
-URL = f"http://host.docker.internal:{PORT}/run"
+HOST = os.environ.get("CLAUDESPACES_HOST_ADDR", "localhost")
+URL = f"http://{HOST}:{PORT}/run"
 
 
 def main():

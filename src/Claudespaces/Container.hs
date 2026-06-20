@@ -91,8 +91,7 @@ buildMounts dirs stateDir _hostPort additionalMounts homePath cHome =
 -- | Host paths to mount read-only into the container if they exist on the host.
 hostClaudePaths :: FilePath -> [(FilePath, String)]
 hostClaudePaths homePath =
-  [ (homePath </> ".claude.json",                    "/claudespaces/host/claude.json")
-  , (homePath </> ".claude" </> "settings.json",     "/claudespaces/host/settings.json")
+  [ (homePath </> ".claude" </> "settings.json",     "/claudespaces/host/settings.json")
   , (homePath </> ".claude" </> "plugins",            "/claudespaces/host/plugins")
   , (homePath </> ".claude" </> ".credentials.json", "/claudespaces/host/credentials.json")
   ]
@@ -136,7 +135,7 @@ createContainer image mounts envVars hostUid hostGid = do
       args      = [ "create", "--tty", "--interactive"
                   , "--user", userSpec
                   , "-w", "/workspace"
-                  , "--add-host", "host.docker.internal:host-gateway"
+                  , "--network", "host"
                   ]
                   ++ mountArgs
                   ++ envArgs

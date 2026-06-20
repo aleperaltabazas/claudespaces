@@ -20,12 +20,8 @@ if [ -d /claudespaces/host/plugins ]; then
     fi
 fi
 
-if [ -f /claudespaces/host/claude.json ]; then
-    cp /claudespaces/host/claude.json "$HOME/.claude.json"
-fi
-
 if [ -f /claudespaces/host/credentials.json ]; then
-    cp /claudespaces/host/credentials.json "$HOME/.claude/.credentials.json"
+    install -m 600 /claudespaces/host/credentials.json "$HOME/.claude/.credentials.json"
 fi
 
 # Put user-writable shim dir and claudespaces bin at the front of PATH so
