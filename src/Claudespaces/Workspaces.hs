@@ -7,6 +7,7 @@ module Claudespaces.Workspaces
   , nameExists
   , saveWorkspace
   , updateWorkspace
+  , renameWorkspace
   , removeWorkspace
   , healRunning
   , generateName
@@ -15,6 +16,7 @@ module Claudespaces.Workspaces
   ) where
 
 import           Control.Exception               (throwIO)
+import           Control.Monad                   (when)
 import           Data.Aeson                      (FromJSON (..), ToJSON (..), Value (..),
                                                   object, withObject, (.:), (.:?), (.!=), (.=))
 import qualified Data.Aeson                      as Aeson
@@ -27,7 +29,9 @@ import qualified Data.Set                        as Set
 import           Data.Text                       (Text)
 import qualified Data.Text                       as T
 import           System.Directory                (createDirectoryIfMissing,
-                                                  doesFileExist)
+                                                  doesDirectoryExist,
+                                                  doesFileExist,
+                                                  renameDirectory)
 import           System.FilePath                 (takeDirectory, (</>))
 import           System.Random                   (randomRIO)
 import           System.Environment              (lookupEnv)
@@ -167,6 +171,18 @@ updateWorkspace path n f = do
   case matched of
     []    -> throwIO (WorkspaceNotFound n)
     (x:_) -> save path (others ++ [f x])
+
+renameWorkspace :: FilePath -> Text -> Text -> IO ()
+renameWorkspace path old new = do
+  ws <- load path
+  when (not (any (\w -> w.name == old) ws)) $ throwIO (WorkspaceNotFound old)
+  when (any (\w -> w.name == new) ws)       $ throwIO (WorkspaceAlreadyExists new)
+  let renamed = map (\w -> if w.name == old then w { name = new } else w) ws
+  save path renamed
+  let oldDir = stateDir path old
+      newDir = stateDir path new
+  exists <- doesDirectoryExist oldDir
+  when exists $ renameDirectory oldDir newDir
 
 removeWorkspace :: FilePath -> Text -> IO ()
 removeWorkspace path n = do

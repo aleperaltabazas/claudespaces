@@ -9,6 +9,7 @@ module Claudespaces.Container
   , mountToArgs
   , createContainer
   , attachContainer
+  , execBash
   , getRunningContainerIds
   , stopContainer
   , removeContainer
@@ -153,6 +154,23 @@ attachContainer containerId = do
       , "-e", "TERM=xterm-256color"
       , cid
       , "/claudespaces/entrypoint.sh"
+      ])
+    { std_in  = Inherit
+    , std_out = Inherit
+    , std_err = Inherit
+    , delegate_ctlc = True
+    }
+  void $ waitForProcess ph
+
+execBash :: Text -> IO ()
+execBash containerId = do
+  let cid = T.unpack containerId
+  (_, _, _, ph) <- createProcess
+    (proc "docker"
+      [ "exec", "-it"
+      , "-e", "TERM=xterm-256color"
+      , cid
+      , "bash"
       ])
     { std_in  = Inherit
     , std_out = Inherit

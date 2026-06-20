@@ -46,9 +46,11 @@ data Command
   | Start Text
   | Stop Text
   | Remove Text
-  | List
+  | List Bool
   | Rebuild RebuildOpts
   | Mount MountOpts
+  | Bash Text
+  | Rename Text Text
 
 data NewOpts = NewOpts
   { dirs       :: [String]
@@ -85,6 +87,8 @@ commandParser = subparser
  <> command "ls"      (info (listCommand    <**> helper) (progDesc "List all workspaces"))
  <> command "rebuild" (info (rebuildCommand <**> helper) (progDesc "Rebuild a workspace image and container"))
  <> command "mount"   (info (mountCommand   <**> helper) (progDesc "Add bind mounts to a workspace (recreates container)"))
+ <> command "bash"    (info (bashCommand    <**> helper) (progDesc "Open a bash shell in a running workspace"))
+ <> command "rename"  (info (renameCommand  <**> helper) (progDesc "Rename a workspace"))
   )
 
 newCommand :: Parser Command
@@ -124,7 +128,11 @@ removeCommand :: Parser Command
 removeCommand = Remove . T.pack <$> argument str (metavar "NAME")
 
 listCommand :: Parser Command
-listCommand = pure List
+listCommand = List <$> switch
+  ( long "quiet"
+ <> short 'q'
+ <> help "Only display container IDs"
+  )
 
 rebuildCommand :: Parser Command
 rebuildCommand = fmap Rebuild $ RebuildOpts
@@ -146,6 +154,14 @@ rebuildCommand = fmap Rebuild $ RebuildOpts
        <> short 's'
        <> help "Start the workspace immediately after rebuilding"
         )
+
+bashCommand :: Parser Command
+bashCommand = Bash . T.pack <$> argument str (metavar "NAME")
+
+renameCommand :: Parser Command
+renameCommand = Rename
+  <$> (T.pack <$> argument str (metavar "OLD"))
+  <*> (T.pack <$> argument str (metavar "NEW"))
 
 mountCommand :: Parser Command
 mountCommand = fmap Mount $ MountOpts
@@ -405,13 +421,19 @@ cmdRemove name = do
 -- cmdList
 -- ---------------------------------------------------------------------------
 
-cmdList :: App ()
-cmdList = do
+cmdList :: Bool -> App ()
+cmdList quiet = do
   sf   <- asks (.stateFile)
   home <- asks (.home)
   liftIO $ do
     ws   <- Workspaces.allWorkspaces sf
     let sorted = sortBy (\a b -> compare b.lastUsedAt a.lastUsedAt) ws
+    if quiet
+      then mapM_ (putStrLn . T.unpack . (.containerId)) sorted
+      else printTable home sorted
+  where
+   printTable :: FilePath -> [Workspace] -> IO ()
+   printTable home sorted = do
     let nameHdr   = "NAME"
         statusHdr = "STATUS"
         dirsHdr   = "DIRS"
@@ -431,6 +453,35 @@ cmdList = do
     putStrLn $ pad nameW nameHdr <> "  " <> pad statusW statusHdr <> "  " <> pad dirsW dirsHdr <> "  " <> lastHdr
     putStrLn $ replicate (nameW + 2 + statusW + 2 + dirsW + 2 + length lastHdr) '-'
     mapM_ printRow rows
+
+-- ---------------------------------------------------------------------------
+-- cmdBash
+-- ---------------------------------------------------------------------------
+
+cmdBash :: Text -> App ()
+cmdBash name = do
+  sf <- asks (.stateFile)
+  liftIO $ do
+    _ <- requireWorkspace sf name
+    checkDocker
+    runningIds <- Container.getRunningContainerIds
+    Workspaces.healRunning sf runningIds
+    ws <- requireWorkspace sf name
+    when (ws.status == Stopped) $ throwIO (WorkspaceAlreadyStopped name)
+    Container.execBash ws.containerId
+
+-- ---------------------------------------------------------------------------
+-- cmdRename
+-- ---------------------------------------------------------------------------
+
+cmdRename :: Text -> Text -> App ()
+cmdRename old new = do
+  sf <- asks (.stateFile)
+  liftIO $ do
+    runningIds <- Container.getRunningContainerIds
+    Workspaces.healRunning sf runningIds
+    Workspaces.renameWorkspace sf old new
+    putStrLn $ "Renamed workspace: " <> T.unpack old <> " -> " <> T.unpack new
 
 -- ---------------------------------------------------------------------------
 -- cmdMount
@@ -576,9 +627,11 @@ dispatch (New     newOpts) = cmdNew newOpts
 dispatch (Start   name)    = cmdStart name
 dispatch (Stop    name)    = cmdStop name
 dispatch (Remove  name)    = cmdRemove name
-dispatch List              = cmdList
+dispatch (List    quiet)   = cmdList quiet
 dispatch (Rebuild opts)    = cmdRebuild opts
 dispatch (Mount   opts)    = cmdMount opts
+dispatch (Bash    name)    = cmdBash name
+dispatch (Rename  old new) = cmdRename old new
 
 run :: IO ()
 run = do

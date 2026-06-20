@@ -3,6 +3,7 @@ module Claudespaces.WorkspacesSpec (spec) where
 
 import           Test.Hspec
 import           System.IO.Temp      (withSystemTempDirectory)
+import qualified System.Directory
 import           System.FilePath     ((</>))
 import           Data.Text           (Text)
 import qualified Data.Text           as T
@@ -110,6 +111,40 @@ spec = do
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
         updateWorkspace f "no-such-name" id `shouldThrow` anyException
+
+  describe "renameWorkspace" $ do
+    it "renames an existing workspace" $
+      withSystemTempDirectory "ws" $ \dir -> do
+        let f = dir </> "workspaces.json"
+        saveWorkspace f (sampleWorkspace "bold-comet")
+        renameWorkspace f "bold-comet" "shiny-star"
+        names <- map (.name) <$> allWorkspaces f
+        names `shouldBe` ["shiny-star"]
+
+    it "raises when old name not found" $
+      withSystemTempDirectory "ws" $ \dir -> do
+        let f = dir </> "workspaces.json"
+        renameWorkspace f "no-such" "shiny-star" `shouldThrow` anyException
+
+    it "raises when new name already taken" $
+      withSystemTempDirectory "ws" $ \dir -> do
+        let f = dir </> "workspaces.json"
+        saveWorkspace f (sampleWorkspace "bold-comet")
+        saveWorkspace f (sampleWorkspace "calm-river")
+        renameWorkspace f "bold-comet" "calm-river" `shouldThrow` anyException
+
+    it "renames the state directory if present" $
+      withSystemTempDirectory "ws" $ \dir -> do
+        let f = dir </> "workspaces.json"
+        saveWorkspace f (sampleWorkspace "bold-comet")
+        let oldDir = stateDir f "bold-comet"
+            newDir = stateDir f "shiny-star"
+        System.Directory.createDirectoryIfMissing True oldDir
+        renameWorkspace f "bold-comet" "shiny-star"
+        oldExists <- System.Directory.doesDirectoryExist oldDir
+        newExists <- System.Directory.doesDirectoryExist newDir
+        oldExists `shouldBe` False
+        newExists `shouldBe` True
 
   describe "removeWorkspace" $ do
     it "removes the correct record" $
