@@ -261,9 +261,10 @@ cmdNew opts = do
     wsName <- case opts.named of
       Just n  -> pure n
       Nothing -> Workspaces.generateName takenNames
+    wsId <- Workspaces.generateId
 
     -- Create state dir
-    let wsd = Workspaces.stateDir sf wsName
+    let wsd = Workspaces.stateDir sf wsId
     createDirectoryIfMissing True (wsd </> "projects")
 
     -- Copy ~/.claude.json if exists
@@ -290,7 +291,8 @@ cmdNew opts = do
     -- Save workspace
     now <- nowUtc
     let ws = Workspace
-          { name        = wsName
+          { id          = wsId
+          , name        = wsName
           , dirs        = map T.pack resolvedDirs
           , containerId = cid
           , image       = image'
@@ -340,7 +342,7 @@ cmdStart name = do
     HostConfig.writeShims shimsPath bridgeCfg.operations
 
     -- If state dir doesn't exist, recreate it and recreate the container
-    let wsd = Workspaces.stateDir sf name
+    let wsd = Workspaces.stateDir sf ws2.id
     wsdExists <- doesDirectoryExist wsd
     cid <- if wsdExists
       then pure ws2.containerId
@@ -405,7 +407,7 @@ cmdRemove name = do
     Workspaces.removeWorkspace sf name
     when wasRunning $ HostServer.stopServerIfLast name sf
     -- Remove state dir
-    let wsd = Workspaces.stateDir sf name
+    let wsd = Workspaces.stateDir sf ws.id
     removeDir wsd
     putStrLn $ "Removed workspace: " <> T.unpack name
   where
@@ -508,7 +510,7 @@ cmdMount opts = do
 
     cfg <- Config.loadConfig "." globalCfgPath
     let wsDirs = map T.unpack ws.dirs
-    let wsd = Workspaces.stateDir sf opts.name
+    let wsd = Workspaces.stateDir sf ws.id
     bridgeCfg <- HostConfig.loadHostBridge globalCfgPath
     let port = bridgeCfg.port
 
@@ -596,7 +598,7 @@ cmdRebuild opts = do
     bridgeCfg <- HostConfig.loadHostBridge globalCfgPath
     let port = bridgeCfg.port
     HostConfig.writeShims shimsPath bridgeCfg.operations
-    let wsd      = Workspaces.stateDir sf opts.name
+    let wsd      = Workspaces.stateDir sf ws.id
     let allMounts = cfg.additionalMounts ++ ws.mounts
     let cHome    = Container.containerHome uid
     let mounts   = Container.buildMounts wsDirs wsd port allMounts home cHome

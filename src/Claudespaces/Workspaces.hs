@@ -11,17 +11,16 @@ module Claudespaces.Workspaces
   , removeWorkspace
   , healRunning
   , generateName
+  , generateId
   , stateDir
   , defaultStateFile
   ) where
 
 import           Control.Exception               (throwIO)
 import           Control.Monad                   (when)
-import           Data.Aeson                      (FromJSON (..), ToJSON (..), Value (..),
+import           Data.Aeson                      (FromJSON (..), ToJSON (..),
                                                   object, withObject, (.:), (.:?), (.!=), (.=))
 import qualified Data.Aeson                      as Aeson
-import qualified Data.Aeson.KeyMap               as KM
-import qualified Data.Aeson.Key                  as Key
 import qualified Data.ByteString.Lazy            as BL
 import           Data.Maybe                      (isJust)
 import           Data.Set                        (Set)
@@ -29,9 +28,7 @@ import qualified Data.Set                        as Set
 import           Data.Text                       (Text)
 import qualified Data.Text                       as T
 import           System.Directory                (createDirectoryIfMissing,
-                                                  doesDirectoryExist,
-                                                  doesFileExist,
-                                                  renameDirectory)
+                                                  doesFileExist)
 import           System.FilePath                 (takeDirectory, (</>))
 import           System.Random                   (randomRIO)
 import           System.Environment              (lookupEnv)
@@ -57,7 +54,8 @@ instance ToJSON Status where
   toJSON Stopped = Aeson.String "stopped"
 
 data Workspace = Workspace
-  { name        :: Text
+  { id          :: Text
+  , name        :: Text
   , dirs        :: [Text]
   , containerId :: Text
   , image       :: Text
@@ -70,7 +68,8 @@ data Workspace = Workspace
 instance FromJSON Workspace where
   parseJSON = withObject "Workspace" $ \o ->
     Workspace
-      <$> o .: "name"
+      <$> o .: "id"
+      <*> o .: "name"
       <*> o .: "dirs"
       <*> o .: "container_id"
       <*> o .: "image"
@@ -81,7 +80,8 @@ instance FromJSON Workspace where
 
 instance ToJSON Workspace where
   toJSON ws = object
-    [ "name"         .= ws.name
+    [ "id"           .= ws.id
+    , "name"         .= ws.name
     , "dirs"         .= ws.dirs
     , "container_id" .= ws.containerId
     , "image"        .= ws.image
@@ -95,7 +95,7 @@ instance ToJSON Workspace where
 -- Internal helpers
 -- ---------------------------------------------------------------------------
 
--- | Load workspaces from file; tries migration from sessions.json if absent.
+-- | Load workspaces from file; returns [] if the file does not exist.
 load :: FilePath -> IO [Workspace]
 load path = do
   exists <- doesFileExist path
@@ -105,35 +105,7 @@ load path = do
       case Aeson.eitherDecode bs of
         Right ws  -> pure ws
         Left err  -> throwIO (ConfigError (T.pack $ "Failed to parse " <> path <> ": " <> err))
-    else do
-      migrated <- tryMigrate path
-      case migrated of
-        Just ws -> pure ws
-        Nothing -> pure []
-
--- | Attempt to migrate from sessions.json in the same directory as the state file.
-tryMigrate :: FilePath -> IO (Maybe [Workspace])
-tryMigrate statePath = do
-  let sessionsPath = takeDirectory statePath </> "sessions.json"
-  exists <- doesFileExist sessionsPath
-  if not exists
-    then pure Nothing
-    else do
-      bs <- BL.readFile sessionsPath
-      case Aeson.eitherDecode bs :: Either String [Value] of
-        Left _      -> pure Nothing
-        Right vals  -> do
-          let stripped = map dropId vals
-          case mapM Aeson.fromJSON stripped of
-            Aeson.Error _    -> pure Nothing
-            Aeson.Success ws -> do
-              save statePath ws
-              pure (Just ws)
-
--- | Drop the "id" key from a JSON object (noop for non-objects).
-dropId :: Value -> Value
-dropId (Object o) = Object (KM.delete (Key.fromString "id") o)
-dropId v          = v
+    else pure []
 
 -- | Write the workspace list to disk (creating parent dirs as needed).
 save :: FilePath -> [Workspace] -> IO ()
@@ -179,10 +151,6 @@ renameWorkspace path old new = do
   when (any (\w -> w.name == new) ws)       $ throwIO (WorkspaceAlreadyExists new)
   let renamed = map (\w -> if w.name == old then w { name = new } else w) ws
   save path renamed
-  let oldDir = stateDir path old
-      newDir = stateDir path new
-  exists <- doesDirectoryExist oldDir
-  when exists $ renameDirectory oldDir newDir
 
 removeWorkspace :: FilePath -> Text -> IO ()
 removeWorkspace path n = do
@@ -215,9 +183,16 @@ generateName taken = go (10000 :: Int)
         then go (n - 1)
         else pure candidate
 
--- | Return the state directory for a given state file path and a sub-path.
+-- | Generate a fresh 16-char hex workspace id.
+generateId :: IO Text
+generateId = T.pack <$> mapM (const hexChar) [(1 :: Int) .. 16]
+  where
+    hexChar = (hex !!) <$> randomRIO (0, 15)
+    hex     = "0123456789abcdef"
+
+-- | Return the state directory for a workspace id, given the state file path.
 stateDir :: FilePath -> Text -> FilePath
-stateDir base sub = takeDirectory base </> T.unpack sub
+stateDir base wsId = takeDirectory base </> T.unpack wsId
 
 -- | Default state file path: ~/.claudespaces/workspaces.json
 defaultStateFile :: IO FilePath

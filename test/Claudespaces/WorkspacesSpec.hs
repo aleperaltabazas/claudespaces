@@ -17,7 +17,8 @@ import           Claudespaces.Workspaces.Internal (adjectives, nouns)
 -- | A minimal workspace for use in tests
 sampleWorkspace :: Text -> Workspace
 sampleWorkspace n = Workspace
-  { name        = n
+  { id          = "id-" <> n
+  , name        = n
   , dirs        = ["/home/user/proj"]
   , containerId = "abc123"
   , image       = "ubuntu:24.04"
@@ -110,7 +111,7 @@ spec = do
     it "raises when name not found" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        updateWorkspace f "no-such-name" id `shouldThrow` anyException
+        updateWorkspace f "no-such-name" Prelude.id `shouldThrow` anyException
 
   describe "renameWorkspace" $ do
     it "renames an existing workspace" $
@@ -133,18 +134,16 @@ spec = do
         saveWorkspace f (sampleWorkspace "calm-river")
         renameWorkspace f "bold-comet" "calm-river" `shouldThrow` anyException
 
-    it "renames the state directory if present" $
+    it "leaves the state directory untouched" $
       withSystemTempDirectory "ws" $ \dir -> do
         let f = dir </> "workspaces.json"
-        saveWorkspace f (sampleWorkspace "bold-comet")
-        let oldDir = stateDir f "bold-comet"
-            newDir = stateDir f "shiny-star"
-        System.Directory.createDirectoryIfMissing True oldDir
+        let ws = sampleWorkspace "bold-comet"
+        saveWorkspace f ws
+        let wsDir = stateDir f ws.id
+        System.Directory.createDirectoryIfMissing True wsDir
         renameWorkspace f "bold-comet" "shiny-star"
-        oldExists <- System.Directory.doesDirectoryExist oldDir
-        newExists <- System.Directory.doesDirectoryExist newDir
-        oldExists `shouldBe` False
-        newExists `shouldBe` True
+        stillThere <- System.Directory.doesDirectoryExist wsDir
+        stillThere `shouldBe` True
 
   describe "removeWorkspace" $ do
     it "removes the correct record" $
@@ -219,35 +218,13 @@ spec = do
       n <- generateName takenSet
       n `shouldBe` target
 
-  describe "migration from sessions.json" $ do
-    it "migrates sessions.json (drops id field) when workspaces.json absent" $
-      withSystemTempDirectory "ws" $ \dir -> do
-        let stateFile    = dir </> "workspaces.json"
-        let sessionsFile = dir </> "sessions.json"
-        -- Write a sessions.json that contains an "id" field
-        writeFile sessionsFile $ unlines
-          [ "[{"
-          , "  \"id\": \"legacy-id-001\","
-          , "  \"name\": \"bold-comet\","
-          , "  \"dirs\": [\"/home/user/proj\"],"
-          , "  \"container_id\": \"abc123\","
-          , "  \"image\": \"ubuntu:24.04\","
-          , "  \"created_at\": \"2024-01-01T00:00:00\","
-          , "  \"last_used_at\": \"2024-01-01T00:00:00\","
-          , "  \"status\": \"stopped\""
-          , "}]"
-          ]
-        -- allWorkspaces on a non-existent workspaces.json triggers migration
-        result <- allWorkspaces stateFile
-        length result `shouldBe` 1
-        (.name) (head result) `shouldBe` "bold-comet"
-
   describe "mounts field" $ do
     it "deserializes with empty mounts when field is absent" $
       withSystemTempDirectory "ws" $ \dir -> do
         let stateFile = dir </> "workspaces.json"
         writeFile stateFile $ unlines
           [ "[{"
+          , "  \"id\": \"id-test-ws\","
           , "  \"name\": \"test-ws\","
           , "  \"dirs\": [\"/home/user/proj\"],"
           , "  \"container_id\": \"abc123\","
