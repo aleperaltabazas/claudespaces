@@ -284,7 +284,7 @@ cmdNew opts = do
     -- Build mounts and create container
     let cHome   = Container.containerHome uid
     let mounts  = Container.buildMounts resolvedDirs wsd port cfg.additionalMounts home cHome
-    hostMounts <- Container.resolveHostMounts home
+    hostMounts <- Container.resolveHostMounts home cHome
     let envVars = Container.buildEnv port home
     cid <- Container.createContainer image' (mounts ++ hostMounts) envVars uid gid
 
@@ -361,7 +361,7 @@ cmdStart name = do
         gid <- fromIntegral <$> getRealGroupID
         let cHome   = Container.containerHome uid
         let mounts  = Container.buildMounts wsDirs wsd port allMounts home cHome
-        hostMounts' <- Container.resolveHostMounts home
+        hostMounts' <- Container.resolveHostMounts home cHome
         let envVars = Container.buildEnv port home
         newCid <- Container.createContainer ws2.image (mounts ++ hostMounts') envVars uid gid
         Workspaces.updateWorkspace sf name (\w -> w { containerId = newCid })
@@ -529,7 +529,7 @@ cmdMount opts = do
 
     Container.removeContainer ws.containerId
     HostConfig.writeShims shimsPath bridgeCfg.operations
-    hostMounts <- Container.resolveHostMounts home
+    hostMounts <- Container.resolveHostMounts home cHome
     let envVars = Container.buildEnv port home
     newCid <- Container.createContainer ws.image (builtMounts ++ hostMounts) envVars uid gid
 
@@ -602,7 +602,7 @@ cmdRebuild opts = do
     let allMounts = cfg.additionalMounts ++ ws.mounts
     let cHome    = Container.containerHome uid
     let mounts   = Container.buildMounts wsDirs wsd port allMounts home cHome
-    hostMounts  <- Container.resolveHostMounts home
+    hostMounts  <- Container.resolveHostMounts home cHome
     let envVars  = Container.buildEnv port home
     newCid <- Container.createContainer image' (mounts ++ hostMounts) envVars uid gid
 

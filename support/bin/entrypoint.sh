@@ -20,10 +20,6 @@ if [ -d /claudespaces/host/plugins ]; then
     fi
 fi
 
-if [ -f /claudespaces/host/credentials.json ]; then
-    install -m 600 /claudespaces/host/credentials.json "$HOME/.claude/.credentials.json"
-fi
-
 # Put user-writable shim dir and claudespaces bin at the front of PATH so
 # shims take precedence over /usr/local/bin and claudespaces-host is findable.
 export PATH="$HOME/.local/bin:/claudespaces/bin:$PATH"

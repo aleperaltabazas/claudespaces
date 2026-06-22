@@ -92,21 +92,33 @@ buildMounts dirs stateDir _hostPort additionalMounts homePath cHome =
 -- | Host paths to mount read-only into the container if they exist on the host.
 hostClaudePaths :: FilePath -> [(FilePath, String)]
 hostClaudePaths homePath =
-  [ (homePath </> ".claude" </> "settings.json",     "/claudespaces/host/settings.json")
-  , (homePath </> ".claude" </> "plugins",            "/claudespaces/host/plugins")
-  , (homePath </> ".claude" </> ".credentials.json", "/claudespaces/host/credentials.json")
+  [ (homePath </> ".claude" </> "settings.json", "/claudespaces/host/settings.json")
+  , (homePath </> ".claude" </> "plugins",       "/claudespaces/host/plugins")
   ]
 
-resolveHostMounts :: FilePath -> IO [Mount]
-resolveHostMounts homePath = do
-  let paths = hostClaudePaths homePath
-  fmap concat $ mapM checkAndMount paths
+-- | Mounts pulled from the host's ~/.claude into the container. The
+-- @.credentials.json@ file is mounted read-write directly at
+-- @<cHome>/.claude/.credentials.json@ so OAuth refresh-token rotation
+-- propagates between the host and every workspace.
+resolveHostMounts :: FilePath -> FilePath -> IO [Mount]
+resolveHostMounts homePath cHome = do
+  ro <- fmap concat $ mapM checkAndMount (hostClaudePaths homePath)
+  cred <- credentialsMount
+  pure (ro ++ cred)
   where
     checkAndMount (src, tgt) = do
       fileExists <- doesFileExist src
       dirExists  <- doesDirectoryExist src
       if fileExists || dirExists
         then pure [Mount (T.pack src) (T.pack tgt) True]
+        else pure []
+
+    credentialsMount = do
+      let src = homePath </> ".claude" </> ".credentials.json"
+          tgt = cHome </> ".claude" </> ".credentials.json"
+      exists <- doesFileExist src
+      if exists
+        then pure [Mount (T.pack src) (T.pack tgt) False]
         else pure []
 
 buildEnv :: Int -> FilePath -> [(String, String)]
