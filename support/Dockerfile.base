@@ -37,6 +37,7 @@ WORKDIR /workspace
 
 COPY bin/entrypoint.sh /claudespaces/entrypoint.sh
 COPY bin/claudespaces-host /claudespaces/bin/claudespaces-host
+COPY CLAUDE.md /workspace/CLAUDE.md
 
 RUN chmod +x /claudespaces/entrypoint.sh /claudespaces/bin/claudespaces-host
 
